@@ -1,0 +1,17 @@
+"""Railway.app deployment configuration"""
+
+# This file is detected by Railway for Python projects
+# Railway will automatically install dependencies from requirements.txt
+# and run the start command defined in Procfile or use uvicorn
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+restartPolicyType = "always"
+
+[env]
+PYTHON_VERSION = "3.11"
