@@ -1,6 +1,6 @@
 """Application configuration using Pydantic Settings"""
 
-from typing import List, Optional
+from typing import List, Optional, Union, Any
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 
@@ -27,10 +27,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
-    # Stripe
-    STRIPE_SECRET_KEY: str
-    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
-    STRIPE_WEBHOOK_SECRET: str
+    # PayPal Payment Integration (Recommended for Peru)
+    PAYPAL_MODE: str = "sandbox"  # sandbox or live
+    PAYPAL_CLIENT_ID: str
+    PAYPAL_CLIENT_SECRET: str
+    PAYPAL_WEBHOOK_ID: Optional[str] = None
+    PAYPAL_MONTHLY_PLAN_ID: Optional[str] = None
+    PAYPAL_YEARLY_PLAN_ID: Optional[str] = None
     
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str
@@ -57,7 +60,7 @@ class Settings(BaseSettings):
     SENTRY_DSN: Optional[str] = None
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: Any = "http://localhost:3000"
     
     # Frontend URL
     FRONTEND_URL: str = "http://localhost:3000"

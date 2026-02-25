@@ -29,7 +29,7 @@ Complete production-ready FastAPI backend for DreamDuel - an AI-powered visual s
 │        Infrastructure Layer             │
 │  ├── Database   (SQLAlchemy models)     │
 │  ├── Cache      (Redis client)          │
-│  └── External   (Stripe,Cloudinary,...) │
+│  └── External   (PayPal,Cloudinary,...) │
 ├─────────────────────────────────────────┤
 │          Utilities & Helpers            │
 └─────────────────────────────────────────┘
@@ -76,11 +76,10 @@ Complete production-ready FastAPI backend for DreamDuel - an AI-powered visual s
 - [x] Real-time interaction tracking
 
 ### ✅ Payment Integration
-- [x] Stripe subscription management
-- [x] Multiple subscription tiers (Free, Basic, Pro, Enterprise)
+- [x] PayPal subscription management
+- [x] Multiple subscription tiers (Free, Premium)
 - [x] Webhook handling for events
 - [x] Invoice tracking
-- [x] Payment method management
 - [x] Subscription cancellation
 
 ### ✅ File Management
@@ -200,7 +199,7 @@ BackEnd DREAMDUEL Web/
 │   │   │   └── redis_client.py ✅ Redis wrapper
 │   │   └── external_services/
 │   │       ├── __init__.py  ✅
-│   │       ├── stripe_service.py    ✅ Payments
+│   │       ├── paypal_service.py    ✅ Payments
 │   │       ├── storage_service.py   ✅ Cloudinary
 │   │       ├── email_service.py     ✅ Resend
 │   │       ├── ai_image_service.py  ✅ AI images (PLACEHOLDER)

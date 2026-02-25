@@ -67,3 +67,10 @@ class ExternalServiceException(DreamDuelException):
     def __init__(self, message: str = "External service error", service: str = "unknown"):
         self.service = service
         super().__init__(f"{service}: {message}", status.HTTP_502_BAD_GATEWAY)
+
+
+class PaymentException(DreamDuelException):
+    """Exception for payment processing errors (PayPal)"""
+    
+    def __init__(self, message: str = "Payment processing failed"):
+        super().__init__(message, status.HTTP_402_PAYMENT_REQUIRED)

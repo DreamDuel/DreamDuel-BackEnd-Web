@@ -45,19 +45,6 @@ def send_email_async(recipient: str, subject: str, html_content: str):
         return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name="generate_story_images_async")
-def generate_story_images_async(story_id: int, scene_count: int):
-    """Generate story images in the background (PLACEHOLDER)"""
-    # TODO: Integrate with actual AI service
-    # For now, this is a placeholder
-    return {
-        "status": "completed",
-        "story_id": story_id,
-        "scenes_generated": scene_count,
-        "note": "PLACEHOLDER - Implement actual AI generation"
-    }
-
-
 @celery_app.task(name="process_analytics_batch")
 def process_analytics_batch(events: list):
     """Process analytics events in batches"""

@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Backend API for DreamDuel - AI-powered visual storytelling platform",
+    description="Backend API for DreamDuel - AI-powered image generation platform",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

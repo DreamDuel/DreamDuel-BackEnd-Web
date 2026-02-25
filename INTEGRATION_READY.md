@@ -166,7 +166,9 @@ CUSTOM_STORY_API_URL=http://localhost:5002/generate
 DATABASE_URL=postgresql://postgres:postgres@db:5432/dreamduel_dev
 REDIS_URL=redis://redis:6379/0
 JWT_SECRET=tu-secret-super-seguro
-STRIPE_SECRET_KEY=sk_test_your_key
+PAYPAL_MODE=sandbox
+PAYPAL_CLIENT_ID=your_client_id
+PAYPAL_CLIENT_SECRET=your_client_secret
 CLOUDINARY_CLOUD_NAME=your_cloud
 RESEND_API_KEY=re_your_key
 ```
@@ -220,7 +222,7 @@ BackEnd DREAMDUEL Web/
 ### Backend:
 - [x] 51 endpoints de API funcionando
 - [x] Autenticación JWT
-- [x] Stripe payments integrado
+- [x] PayPal payments integrado
 - [x] Cloudinary storage integrado
 - [x] Resend emails integrado
 - [x] Redis caching
