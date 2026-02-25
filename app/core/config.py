@@ -35,13 +35,14 @@ class Settings(BaseSettings):
     PAYPAL_MONTHLY_PLAN_ID: Optional[str] = None
     PAYPAL_YEARLY_PLAN_ID: Optional[str] = None
     
-    # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str
-    CLOUDINARY_API_KEY: str
-    CLOUDINARY_API_SECRET: str
+    # AWS S3 (Storage)
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str = "us-east-1"
+    AWS_S3_BUCKET: str
     
-    # Resend
-    RESEND_API_KEY: str
+    # AWS SES (Email)
+    AWS_SES_REGION: Optional[str] = None  # Defaults to AWS_REGION if not set
     FROM_EMAIL: str = "noreply@dreamduel.com"
     
     # OAuth (optional)

@@ -1,21 +1,27 @@
-"""Email service using Resend"""
+"""Email service using AWS SES"""
 
-import resend
+import boto3
+from botocore.exceptions import ClientError
 from typing import List, Optional, Dict, Any
 
 from app.core.config import settings
 from app.core.exceptions import EmailException
 
 
-# Configure Resend
-resend.api_key = settings.RESEND_API_KEY
-
-
-class EmailService:
-    """Service for sending emails via Resend"""
+class SESEmailService:
+    """Service for sending emails via AWS SES"""
     
-    @staticmethod
+    def __init__(self):
+        ses_region = settings.AWS_SES_REGION or settings.AWS_REGION
+        self.ses_client = boto3.client(
+            'ses',
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=ses_region
+        )
+    
     def send_email(
+        self,
         to: List[str],
         subject: str,
         html: str,
@@ -24,7 +30,7 @@ class EmailService:
         tags: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
-        Send an email
+        Send an email via AWS SES
         
         Args:
             to: List of recipient emails
@@ -32,33 +38,50 @@ class EmailService:
             html: HTML email content
             from_email: Sender email (default: settings.FROM_EMAIL)
             reply_to: Reply-to email
-            tags: Email tags for tracking
+            tags: Email tags for tracking (converted to SES tags)
             
         Returns:
-            Resend response
+            SES response
         """
         try:
-            params = {
-                "from": from_email or settings.FROM_EMAIL,
-                "to": to,
-                "subject": subject,
-                "html": html,
+            sender = from_email or settings.FROM_EMAIL
+            
+            # Build email message
+            message = {
+                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                'Body': {'Html': {'Data': html, 'Charset': 'UTF-8'}}
+            }
+            
+            # Send email
+            kwargs = {
+                'Source': sender,
+                'Destination': {'ToAddresses': to},
+                'Message': message,
             }
             
             if reply_to:
-                params["reply_to"] = reply_to
+                kwargs['ReplyToAddresses'] = [reply_to]
             
+            # SES tags (different format than Resend)
             if tags:
-                params["tags"] = tags
+                kwargs['Tags'] = [
+                    {'Name': tag.get('name', 'tag'), 'Value': tag.get('value', '')}
+                    for tag in tags
+                ]
             
-            response = resend.Emails.send(params)
-            return response
+            response = self.ses_client.send_email(**kwargs)
             
+            return {
+                'message_id': response['MessageId'],
+                'status': 'sent'
+            }
+            
+        except ClientError as e:
+            raise EmailException(f"SES failed to send email: {str(e)}")
         except Exception as e:
             raise EmailException(f"Failed to send email: {str(e)}")
     
-    @staticmethod
-    def send_verification_email(to: str, username: str, verification_token: str) -> Dict[str, Any]:
+    def send_verification_email(self, to: str, username: str, verification_token: str) -> Dict[str, Any]:
         """Send email verification email"""
         verification_url = f"https://dreamduel.com/verify-email?token={verification_token}"
         
@@ -94,15 +117,14 @@ class EmailService:
         </html>
         """
         
-        return EmailService.send_email(
+        return self.send_email(
             to=[to],
             subject="Verify your DreamDuel account",
             html=html,
             tags=[{"name": "type", "value": "verification"}]
         )
     
-    @staticmethod
-    def send_password_reset_email(to: str, username: str, reset_token: str) -> Dict[str, Any]:
+    def send_password_reset_email(self, to: str, username: str, reset_token: str) -> Dict[str, Any]:
         """Send password reset email"""
         reset_url = f"https://dreamduel.com/reset-password?token={reset_token}"
         
@@ -139,15 +161,14 @@ class EmailService:
         </html>
         """
         
-        return EmailService.send_email(
+        return self.send_email(
             to=[to],
             subject="Reset your DreamDuel password",
             html=html,
             tags=[{"name": "type", "value": "password_reset"}]
         )
     
-    @staticmethod
-    def send_welcome_email(to: str, username: str) -> Dict[str, Any]:
+    def send_welcome_email(self, to: str, username: str) -> Dict[str, Any]:
         """Send welcome email after successful verification"""
         html = f"""
         <!DOCTYPE html>
@@ -162,18 +183,17 @@ class EmailService:
             </div>
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
                 <h2>Hi {username}!</h2>
-                <p>Your account is now verified and ready to use. You're all set to start creating amazing AI-powered stories!</p>
+                <p>Your account is now verified and ready to use. You're all set to start creating amazing AI-powered images!</p>
                 <h3>What you can do with your free account:</h3>
                 <ul>
                     <li>✨ Generate 10 AI images per month</li>
-                    <li>📖 Create unlimited stories</li>
-                    <li>❤️ Like and save your favorite stories</li>
-                    <li>💬 Comment and connect with other creators</li>
+                    <li>❤️ Like and save your favorite images</li>
+                    <li>💬 Follow and connect with other creators</li>
                 </ul>
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://dreamduel.com/create" 
+                    <a href="https://dreamduel.com/generate" 
                        style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
-                        Create Your First Story
+                        Generate Your First Image
                     </a>
                 </div>
                 <p style="color: #6c757d; font-size: 14px;">
@@ -184,7 +204,7 @@ class EmailService:
         </html>
         """
         
-        return EmailService.send_email(
+        return self.send_email(
             to=[to],
             subject="Welcome to DreamDuel! 🎉",
             html=html,
@@ -193,4 +213,5 @@ class EmailService:
 
 
 # Singleton instance
-email_service = EmailService()
+email_service = SESEmailService()
+

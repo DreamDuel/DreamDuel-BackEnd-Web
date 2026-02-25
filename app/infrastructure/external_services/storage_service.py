@@ -1,124 +1,117 @@
-"""Cloudinary storage service"""
+"""AWS S3 storage service"""
 
-import cloudinary
-import cloudinary.uploader
-import cloudinary.api
+import boto3
+from botocore.exceptions import ClientError
 from typing import Dict, Any, Optional
 from fastapi import UploadFile
+import uuid
+from datetime import datetime
 
 from app.core.config import settings
-from app.core.exceptions import CloudinaryException
+from app.core.exceptions import ExternalServiceException
 
 
-# Configure Cloudinary
-cloudinary.config(
-    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
-    api_key=settings.CLOUDINARY_API_KEY,
-    api_secret=settings.CLOUDINARY_API_SECRET,
-    secure=True
-)
-
-
-class CloudinaryService:
-    """Service for Cloudinary file storage and management"""
+class S3StorageService:
+    """Service for AWS S3 file storage and management"""
     
-    @staticmethod
+    def __init__(self):
+        self.s3_client = boto3.client(
+            's3',
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION
+        )
+        self.bucket = settings.AWS_S3_BUCKET
+        self.region = settings.AWS_REGION
+    
     async def upload_image(
+        self,
         file: UploadFile,
         folder: str = "general",
         transformation: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Upload an image to Cloudinary
+        Upload an image to S3
         
         Args:
             file: Uploaded file
-            folder: Cloudinary folder (stories, avatars, characters, etc.)
-            transformation: Optional transformation parameters
+            folder: S3 folder (avatars, generated_images, etc.)
+            transformation: Not used in S3 (kept for compatibility)
             
         Returns:
-            Upload result with URL, public_id, etc.
+            Upload result with URL, key, etc.
         """
         try:
             # Read file content
             contents = await file.read()
             
-            # Upload parameters
-            upload_params = {
-                "folder": f"dreamduel/{folder}",
-                "resource_type": "auto",
-                "format": "auto",  # Auto-detect format
-                "quality": "auto:best",  # Auto quality optimization
-                "fetch_format": "auto",  # Auto format (WebP, AVIF, etc.)
-            }
+            # Generate unique filename
+            file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+            unique_filename = f"{uuid.uuid4()}.{file_extension}"
+            key = f"dreamduel/{folder}/{unique_filename}"
             
-            if transformation:
-                upload_params["transformation"] = transformation
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=contents,
+                ContentType=file.content_type or 'image/jpeg',
+                CacheControl='max-age=31536000',  # 1 year cache
+            )
             
-            # Upload to Cloudinary
-            result = cloudinary.uploader.upload(contents, **upload_params)
+            # Generate public URL
+            url = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{key}"
             
             return {
-                "url": result["secure_url"],
-                "publicId": result["public_id"],
-                "width": result.get("width", 0),
-                "height": result.get("height", 0),
-                "format": result.get("format", ""),
+                "url": url,
+                "publicId": key,
+                "key": key,
+                "bucket": self.bucket,
+                "width": 0,  # S3 doesn't auto-detect dimensions
+                "height": 0,
+                "format": file_extension,
             }
             
+        except ClientError as e:
+            raise ExternalServiceException(f"S3 upload failed: {str(e)}")
         except Exception as e:
-            raise CloudinaryException(f"Upload failed: {str(e)}")
+            raise ExternalServiceException(f"Upload failed: {str(e)}")
     
-    @staticmethod
-    def delete_image(public_id: str) -> Dict[str, Any]:
-        """Delete an image from Cloudinary"""
+    def delete_image(self, key: str) -> Dict[str, Any]:
+        """Delete an image from S3"""
         try:
-            result = cloudinary.uploader.destroy(public_id)
-            return result
-        except Exception as e:
-            raise CloudinaryException(f"Delete failed: {str(e)}")
+            self.s3_client.delete_object(Bucket=self.bucket, Key=key)
+            return {"status": "deleted", "key": key}
+        except ClientError as e:
+            raise ExternalServiceException(f"S3 delete failed: {str(e)}")
     
-    @staticmethod
     def get_image_url(
-        public_id: str,
+        self,
+        key: str,
         transformation: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Get optimized image URL with transformations
+        Get S3 image URL
         
         Args:
-            public_id: Cloudinary public ID
-            transformation: Transformation parameters
+            key: S3 object key
+            transformation: Not used in S3 (use CloudFront for transformations)
             
         Returns:
-            Optimized image URL
+            S3 image URL
         """
-        try:
-            url = cloudinary.CloudinaryImage(public_id).build_url(
-                transformation=transformation,
-                secure=True,
-                fetch_format="auto",
-                quality="auto:best"
-            )
-            return url
-        except Exception as e:
-            raise CloudinaryException(f"Failed to generate URL: {str(e)}")
+        return f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{key}"
     
-    @staticmethod
-    def get_thumbnail_url(public_id: str, width: int = 300, height: int = 300) -> str:
-        """Get thumbnail URL"""
-        transformation = {
-            "width": width,
-            "height": height,
-            "crop": "fill",
-            "gravity": "auto",
-            "quality": "auto:best",
-            "fetch_format": "auto"
-        }
-        return CloudinaryService.get_image_url(public_id, transformation)
+    def get_thumbnail_url(self, key: str, width: int = 300, height: int = 300) -> str:
+        """
+        Get thumbnail URL
+        
+        Note: S3 doesn't do dynamic transformations.
+        Consider using CloudFront + Lambda@Edge for image resizing.
+        """
+        return self.get_image_url(key)
     
-    @staticmethod
-    def validate_upload_file(file: UploadFile) -> bool:
+    def validate_upload_file(self, file: UploadFile) -> bool:
         """Validate upload file type and size"""
         # Check file type
         allowed_types = {
@@ -131,15 +124,12 @@ class CloudinaryService:
         }
         
         if file.content_type not in allowed_types:
-            raise CloudinaryException(
+            raise ExternalServiceException(
                 f"Invalid file type: {file.content_type}. Allowed: JPEG, PNG, GIF, WebP, HEIC"
             )
-        
-        # Note: File size validation should be done before reading the file
-        # FastAPI has built-in file size limits via UploadFile
         
         return True
 
 
 # Singleton instance
-cloudinary_service = CloudinaryService()
+storage_service = S3StorageService()
