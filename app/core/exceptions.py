@@ -19,6 +19,10 @@ class AuthenticationException(DreamDuelException):
         super().__init__(message, status.HTTP_401_UNAUTHORIZED)
 
 
+# Alias for backward compatibility
+UnauthorizedException = AuthenticationException
+
+
 class AuthorizationException(DreamDuelException):
     """Exception for authorization errors"""
     
@@ -26,17 +30,31 @@ class AuthorizationException(DreamDuelException):
         super().__init__(message, status.HTTP_403_FORBIDDEN)
 
 
+# Alias for backward compatibility
+ForbiddenException = AuthorizationException
+
+
 class NotFoundException(DreamDuelException):
     """Exception for resource not found"""
     
-    def __init__(self, message: str = "Resource not found"):
+    def __init__(self, resource_type: str = "Resource", resource_id: str = None):
+        if resource_id:
+            message = f"{resource_type} with ID '{resource_id}' not found"
+        else:
+            message = f"{resource_type} not found"
         super().__init__(message, status.HTTP_404_NOT_FOUND)
 
 
 class ConflictException(DreamDuelException):
     """Exception for resource conflicts"""
     
-    def __init__(self, message: str = "Resource already exists"):
+    def __init__(self, resource_type: str = "Resource", field: str = None, value: str = None):
+        if field and value:
+            message = f"{resource_type} with {field} '{value}' already exists"
+        elif field:
+            message = f"{resource_type} {field} already exists"
+        else:
+            message = f"{resource_type} already exists"
         super().__init__(message, status.HTTP_409_CONFLICT)
 
 
@@ -50,7 +68,8 @@ class ValidationException(DreamDuelException):
 class InsufficientCreditsException(DreamDuelException):
     """Exception for insufficient credits"""
     
-    def __init__(self, message: str = "Insufficient credits"):
+    def __init__(self, required: int = 1, available: int = 0):
+        message = f"Insufficient credits. Required: {required}, Available: {available}"
         super().__init__(message, status.HTTP_402_PAYMENT_REQUIRED)
 
 
@@ -67,6 +86,11 @@ class ExternalServiceException(DreamDuelException):
     def __init__(self, message: str = "External service error", service: str = "unknown"):
         self.service = service
         super().__init__(f"{service}: {message}", status.HTTP_502_BAD_GATEWAY)
+
+
+# Aliases for backward compatibility
+CloudinaryException = ExternalServiceException
+EmailException = ExternalServiceException
 
 
 class PaymentException(DreamDuelException):

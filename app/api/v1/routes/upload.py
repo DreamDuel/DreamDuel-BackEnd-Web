@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("", response_model=UploadResponse)
 async def upload_file(
     file: UploadFile = File(...),
-    folder: Literal["stories", "avatars", "characters"] = Form("stories"),
+    folder: Literal["avatars", "images"] = Form("images"),
     current_user_id: str = Depends(get_current_user_id)
 ):
     """Upload an image file to Cloudinary"""

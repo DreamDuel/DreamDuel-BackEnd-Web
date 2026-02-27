@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.core.dependencies import get_current_user_id
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import User, Story, Follow
+from app.infrastructure.database.models import User, Follow
 from app.api.v1.schemas.user import (
     UserProfileSchema, PublicUserProfileSchema, UserUpdate,
     UserAvatarUpdate, FollowResponse, CreditsResponse,
@@ -32,7 +32,6 @@ async def get_current_user(
         raise NotFoundException("User", user_id)
     
     # Get stats
-    stories_count = db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
     followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
     following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     
@@ -40,7 +39,7 @@ async def get_current_user(
         **user.__dict__,
         followers_count=followers_count,
         following_count=following_count,
-        stories_count=stories_count
+        stories_count=0
     )
 
 
@@ -53,7 +52,6 @@ async def get_user_profile(user_id: UUID, db: Session = Depends(get_db)):
         raise NotFoundException("User", user_id)
     
     # Get stats
-    stories_count = db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
     followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
     following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     
@@ -61,7 +59,7 @@ async def get_user_profile(user_id: UUID, db: Session = Depends(get_db)):
         **user.__dict__,
         followers_count=followers_count,
         following_count=following_count,
-        stories_count=stories_count
+        stories_count=0
     )
 
 
@@ -102,7 +100,6 @@ async def update_user_profile(
     db.refresh(user)
     
     # Get stats
-    stories_count = db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
     followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
     following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     
@@ -110,7 +107,7 @@ async def update_user_profile(
         **user.__dict__,
         followers_count=followers_count,
         following_count=following_count,
-        stories_count=stories_count
+        stories_count=0
     )
 
 
@@ -135,7 +132,6 @@ async def update_avatar(
     db.refresh(user)
     
     # Get stats
-    stories_count = db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
     followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
     following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     
@@ -143,7 +139,7 @@ async def update_avatar(
         **user.__dict__,
         followers_count=followers_count,
         following_count=following_count,
-        stories_count=stories_count
+        stories_count=0
     )
 
 
@@ -218,7 +214,7 @@ async def get_followers(user_id: UUID, db: Session = Depends(get_db)):
             **user.__dict__,
             followers_count=db.query(Follow).filter(Follow.following_id == user.id).count(),
             following_count=db.query(Follow).filter(Follow.follower_id == user.id).count(),
-            stories_count=db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
+            stories_count=0
         )
         for user in users
     ]
@@ -238,7 +234,7 @@ async def get_following(user_id: UUID, db: Session = Depends(get_db)):
             **user.__dict__,
             followers_count=db.query(Follow).filter(Follow.following_id == user.id).count(),
             following_count=db.query(Follow).filter(Follow.follower_id == user.id).count(),
-            stories_count=db.query(Story).filter(Story.author_id == user.id, Story.deleted_at.is_(None)).count()
+            stories_count=0
         )
         for user in users
     ]

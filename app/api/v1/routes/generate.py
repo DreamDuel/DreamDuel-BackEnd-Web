@@ -8,10 +8,9 @@ from app.api.v1.schemas.generate import (
     GenerateImageRequest, GenerateImageResponse,
     GenerateBatchRequest, GenerateBatchResponse,
     RegenerateRequest, GenerationStatusResponse,
-    CancelGenerationResponse, GenerateStoryRequest, GenerateStoryResponse
+    CancelGenerationResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
-from app.infrastructure.external_services.ai_story_service import ai_story_service
 from app.infrastructure.database.session import get_db
 from app.infrastructure.database.models import User
 from app.core.exceptions import NotFoundException, InsufficientCreditsException
@@ -53,38 +52,39 @@ async def generate_image(
     return GenerateImageResponse(**result)
 
 
-@router.post("/batch", response_model=GenerateBatchResponse)
-async def generate_batch(
-    data: GenerateBatchRequest,
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Generate multiple AI images in batch (PLACEHOLDER)"""
-    
-    # Check user credits
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise NotFoundException("User", current_user_id)
-    
-    required_credits = len(data.scenes)
-    
-    if not user.is_premium and user.free_images_left < required_credits:
-        raise InsufficientCreditsException(required=required_credits, available=user.free_images_left)
-    
-    # Generate images
-    prompts = [{"text": scene.text, "prompt": scene.prompt} for scene in data.scenes]
-    result = await ai_image_service.generate_batch(
-        prompts=prompts,
-        style=data.style,
-        character_images=data.characterImages
-    )
-    
-    # Deduct credits
-    if not user.is_premium:
-        user.free_images_left -= required_credits
-        db.commit()
-    
-    return GenerateBatchResponse(**result)
+# Batch generation endpoint commented out - designed for story scenes
+# @router.post("/batch", response_model=GenerateBatchResponse)
+# async def generate_batch(
+#     data: GenerateBatchRequest,
+#     current_user_id: str = Depends(get_current_user_id),
+#     db: Session = Depends(get_db)
+# ):
+#     """Generate multiple AI images in batch (PLACEHOLDER)"""
+#     
+#     # Check user credits
+#     user = db.query(User).filter(User.id == current_user_id).first()
+#     if not user:
+#         raise NotFoundException("User", current_user_id)
+#     
+#     required_credits = len(data.scenes)
+#     
+#     if not user.is_premium and user.free_images_left < required_credits:
+#         raise InsufficientCreditsException(required=required_credits, available=user.free_images_left)
+#     
+#     # Generate images
+#     prompts = [{"text": scene.text, "prompt": scene.prompt} for scene in data.scenes]
+#     result = await ai_image_service.generate_batch(
+#         prompts=prompts,
+#         style=data.style,
+#         character_images=data.characterImages
+#     )
+#     
+#     # Deduct credits
+#     if not user.is_premium:
+#         user.free_images_left -= required_credits
+#         db.commit()
+#     
+#     return GenerateBatchResponse(**result)
 
 
 @router.post("/{generation_id}/regenerate", response_model=GenerateImageResponse)
@@ -140,18 +140,19 @@ async def cancel_generation(
     return CancelGenerationResponse(success=success)
 
 
-@router.post("/story", response_model=GenerateStoryResponse)
-async def generate_story(
-    data: GenerateStoryRequest,
-    current_user_id: str = Depends(get_current_user_id)
-):
-    """Generate a story structure with AI (PLACEHOLDER)"""
-    
-    result = await ai_story_service.generate_story(
-        prompt=data.prompt,
-        tags=data.tags,
-        intensity=data.intensity,
-        characters=[c.dict() for c in data.characters]
-    )
-    
-    return GenerateStoryResponse(**result)
+# Story generation endpoint commented out - not in use
+# @router.post("/story", response_model=GenerateStoryResponse)
+# async def generate_story(
+#     data: GenerateStoryRequest,
+#     current_user_id: str = Depends(get_current_user_id)
+# ):
+#     """Generate a story structure with AI (PLACEHOLDER)"""
+#     
+#     result = await ai_story_service.generate_story(
+#         prompt=data.prompt,
+#         tags=data.tags,
+#         intensity=data.intensity,
+#         characters=[c.dict() for c in data.characters]
+#     )
+#     
+#     return GenerateStoryResponse(**result)

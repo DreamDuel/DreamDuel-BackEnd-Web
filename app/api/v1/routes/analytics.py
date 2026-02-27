@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 
 from app.core.dependencies import get_current_user_id, get_optional_user_id
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import AnalyticsEvent, Story
+from app.infrastructure.database.models import AnalyticsEvent
 from app.api.v1.schemas.analytics import (
     AnalyticsEventRequest, AnalyticsEventResponse,
-    UserMetricsResponse, StoryAnalyticsResponse
+    UserMetricsResponse
 )
 from app.core.exceptions import NotFoundException
 
@@ -85,44 +85,45 @@ async def get_user_metrics(
     )
 
 
-@router.get("/story/{story_id}", response_model=StoryAnalyticsResponse)
-async def get_story_analytics(
-    story_id: UUID,
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Get analytics for a specific story"""
-    
-    story = db.query(Story).filter(Story.id == story_id, Story.deleted_at.is_(None)).first()
-    if not story:
-        raise NotFoundException("Story", story_id)
-    
-    # Only allow author to view analytics
-    if str(story.author_id) != current_user_id:
-        raise NotFoundException("Story", story_id)  # Return 404 instead of 403 for privacy
-    
-    # Get view events
-    view_events = db.query(AnalyticsEvent).filter(
-        AnalyticsEvent.event_type == "story_view",
-        AnalyticsEvent.metadata["story_id"].astext == str(story_id)
-    ).all()
-    
-    # Calculate average read time (mock)
-    avg_read_time = 0.0
-    if view_events:
-        # In production, you'd track actual read time
-        avg_read_time = 2.5  # Mock: 2.5 minutes average
-    
-    # Calculate completion rate (mock)
-    completion_rate = 0.75  # Mock: 75% completion rate
-    
-    return StoryAnalyticsResponse(
-        storyId=story_id,
-        views=story.views,
-        likes=story.likes,
-        saves=story.saves,
-        comments=story.comments_count,
-        shares=0,  # Not implemented yet
-        averageReadTime=avg_read_time,
-        completionRate=completion_rate
-    )
+# Story analytics endpoint commented out - not in use
+# @router.get("/story/{story_id}", response_model=StoryAnalyticsResponse)
+# async def get_story_analytics(
+#     story_id: UUID,
+#     current_user_id: str = Depends(get_current_user_id),
+#     db: Session = Depends(get_db)
+# ):
+#     """Get analytics for a specific story"""
+#     
+#     story = db.query(Story).filter(Story.id == story_id, Story.deleted_at.is_(None)).first()
+#     if not story:
+#         raise NotFoundException("Story", story_id)
+#     
+#     # Only allow author to view analytics
+#     if str(story.author_id) != current_user_id:
+#         raise NotFoundException("Story", story_id)  # Return 404 instead of 403 for privacy
+#     
+#     # Get view events
+#     view_events = db.query(AnalyticsEvent).filter(
+#         AnalyticsEvent.event_type == "story_view",
+#         AnalyticsEvent.metadata["story_id"].astext == str(story_id)
+#     ).all()
+#     
+#     # Calculate average read time (mock)
+#     avg_read_time = 0.0
+#     if view_events:
+#         # In production, you'd track actual read time
+#         avg_read_time = 2.5  # Mock: 2.5 minutes average
+#     
+#     # Calculate completion rate (mock)
+#     completion_rate = 0.75  # Mock: 75% completion rate
+#     
+#     return StoryAnalyticsResponse(
+#         storyId=story_id,
+#         views=story.views,
+#         likes=story.likes,
+#         saves=story.saves,
+#         comments=story.comments_count,
+#         shares=0,  # Not implemented yet
+#         averageReadTime=avg_read_time,
+#         completionRate=completion_rate
+#     )

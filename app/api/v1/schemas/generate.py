@@ -66,27 +66,28 @@ class CancelGenerationResponse(BaseModel):
     success: bool = True
 
 
-class GenerateStoryRequest(BaseModel):
-    """Generate story request (AI story generation)"""
-    prompt: str = Field(..., min_length=10, max_length=1000)
-    tags: List[str] = Field(default_factory=list)
-    intensity: float = Field(default=0.5, ge=0.0, le=1.0)
-    characters: List["CharacterInput"] = Field(default_factory=list)
+# Story generation schemas commented out - not in use
+# class GenerateStoryRequest(BaseModel):
+#     """Generate story request (AI story generation)"""
+#     prompt: str = Field(..., min_length=10, max_length=1000)
+#     tags: List[str] = Field(default_factory=list)
+#     intensity: float = Field(default=0.5, ge=0.0, le=1.0)
+#     characters: List["CharacterInput"] = Field(default_factory=list)
 
 
-class GeneratedScene(BaseModel):
-    """Generated scene"""
-    text: str
-    imagePrompt: str
+# class GeneratedScene(BaseModel):
+#     """Generated scene"""
+#     text: str
+#     imagePrompt: str
 
 
-class GenerateStoryResponse(BaseModel):
-    """Generate story response"""
-    title: str
-    synopsis: str
-    scenes: List[GeneratedScene]
+# class GenerateStoryResponse(BaseModel):
+#     """Generate story response"""
+#     title: str
+#     synopsis: str
+#     scenes: List[GeneratedScene]
 
 
 # Import after class definitions
-from app.api.v1.schemas.story import CharacterInput
-GenerateStoryRequest.model_rebuild()
+# from app.api.v1.schemas.story import CharacterInput
+# GenerateStoryRequest.model_rebuild()

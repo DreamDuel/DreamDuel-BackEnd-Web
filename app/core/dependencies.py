@@ -47,6 +47,29 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> str:
+    """Get the current user ID from token"""
+    token = credentials.credentials
+    
+    # Decode token
+    payload = decode_token(token)
+    if not payload:
+        raise AuthenticationException("Invalid or expired token")
+    
+    # Check token type
+    if payload.get("type") != "access":
+        raise AuthenticationException("Invalid token type")
+    
+    # Get user ID from token
+    user_id: Optional[str] = payload.get("sub")
+    if user_id is None:
+        raise AuthenticationException("Invalid token payload")
+    
+    return str(user_id)
+
+
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
@@ -69,6 +92,19 @@ async def get_optional_user(
     
     try:
         return await get_current_user(credentials, db)
+    except:
+        return None
+
+
+async def get_optional_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[str]:
+    """Get current user ID if authenticated, None otherwise"""
+    if not credentials:
+        return None
+    
+    try:
+        return await get_current_user_id(credentials)
     except:
         return None
 

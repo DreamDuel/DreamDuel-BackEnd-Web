@@ -109,8 +109,7 @@ async def login(data: LoginRequest, db: Session = Depends(get_db)):
     refresh_token = create_refresh_token({"sub": str(user.id)})
     
     # Get user stats
-    from app.infrastructure.database.models import Story, Follow
-    stories_count = db.query(Story).filter(Story.author_id == user.id).count()
+    from app.infrastructure.database.models import Follow
     followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
     following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     
@@ -118,7 +117,7 @@ async def login(data: LoginRequest, db: Session = Depends(get_db)):
         **user.__dict__,
         followers_count=followers_count,
         following_count=following_count,
-        stories_count=stories_count
+        stories_count=0
     )
     
     return AuthResponse(
@@ -159,8 +158,7 @@ async def refresh_token(data: RefreshTokenRequest, db: Session = Depends(get_db)
         new_refresh_token = create_refresh_token({"sub": user_id})
         
         # Get user stats
-        from app.infrastructure.database.models import Story, Follow
-        stories_count = db.query(Story).filter(Story.author_id == user.id).count()
+        from app.infrastructure.database.models import Follow
         followers_count = db.query(Follow).filter(Follow.following_id == user.id).count()
         following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
         
@@ -168,7 +166,7 @@ async def refresh_token(data: RefreshTokenRequest, db: Session = Depends(get_db)
             **user.__dict__,
             followers_count=followers_count,
             following_count=following_count,
-            stories_count=stories_count
+            stories_count=0
         )
         
         return AuthResponse(
