@@ -9,8 +9,11 @@ import secrets
 from app.core.config import settings
 
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing context - using argon2 (better than bcrypt)
+pwd_context = CryptContext(
+    schemes=["argon2"], 
+    deprecated="auto"
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -19,7 +22,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
+    """Hash a password using argon2"""
     return pwd_context.hash(password)
 
 

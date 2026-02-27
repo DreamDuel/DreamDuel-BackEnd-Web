@@ -69,8 +69,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rate limiting middleware
-app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
+# Rate limiting middleware (temporarily disabled for development)
+# TODO: Fix async issues and re-enable in production
+# app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
 
 
 # Custom exception handlers

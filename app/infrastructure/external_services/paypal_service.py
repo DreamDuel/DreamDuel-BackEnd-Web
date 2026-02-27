@@ -1,6 +1,7 @@
 """PayPal payment service for subscriptions and payments"""
 
-import paypalrestsdk
+import requests
+import base64
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -8,19 +9,48 @@ from app.core.config import settings
 from app.core.exceptions import PaymentException
 
 
-# Configure PayPal SDK
-paypalrestsdk.configure({
-    "mode": settings.PAYPAL_MODE,  # sandbox or live
-    "client_id": settings.PAYPAL_CLIENT_ID,
-    "client_secret": settings.PAYPAL_CLIENT_SECRET
-})
-
-
 class PayPalService:
-    """Service for PayPal payment processing and subscriptions"""
+    """Service for PayPal payment processing and subscriptions using REST API"""
     
-    @staticmethod
+    def __init__(self):
+        self.base_url = "https://api-m.sandbox.paypal.com" if settings.PAYPAL_MODE == "sandbox" else "https://api-m.paypal.com"
+        self.client_id = settings.PAYPAL_CLIENT_ID
+        self.client_secret = settings.PAYPAL_CLIENT_SECRET
+        self._access_token = None
+        self._token_expires_at = None
+    
+    def get_access_token(self) -> str:
+        """Get OAuth2 access token for PayPal API"""
+        # Check if we have a valid cached token
+        if self._access_token and self._token_expires_at:
+            if datetime.now().timestamp() < self._token_expires_at:
+                return self._access_token
+        
+        # Get new token
+        auth = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {"grant_type": "client_credentials"}
+        
+        response = requests.post(
+            f"{self.base_url}/v1/oauth2/token",
+            headers=headers,
+            data=data
+        )
+        
+        if response.status_code != 200:
+            raise PaymentException(f"Failed to get PayPal access token: {response.text}")
+        
+        token_data = response.json()
+        self._access_token = token_data["access_token"]
+        self._token_expires_at = datetime.now().timestamp() + token_data.get("expires_in", 3600) - 60
+        
+        return self._access_token
+    
     def create_subscription(
+        self,
         plan_id: str,
         return_url: str,
         cancel_url: str,
@@ -41,17 +71,21 @@ class PayPalService:
             Dictionary with subscription_id and approval_url
         """
         try:
-            subscription_attributes = {
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+            
+            subscription_data = {
                 "plan_id": plan_id,
                 "application_context": {
                     "brand_name": "DreamDuel",
                     "locale": "es-PE",
                     "shipping_preference": "NO_SHIPPING",
                     "user_action": "SUBSCRIBE_NOW",
-                    "payment_method": {
-                        "payer_selected": "PAYPAL",
-                        "payee_preferred": "IMMEDIATE_PAYMENT_REQUIRED"
-                    },
                     "return_url": return_url,
                     "cancel_url": cancel_url
                 }
@@ -59,121 +93,175 @@ class PayPalService:
             
             # Add subscriber information if provided
             if subscriber_email or subscriber_name:
-                subscription_attributes["subscriber"] = {}
+                subscription_data["subscriber"] = {}
                 if subscriber_email:
-                    subscription_attributes["subscriber"]["email_address"] = subscriber_email
+                    subscription_data["subscriber"]["email_address"] = subscriber_email
                 if subscriber_name:
-                    subscription_attributes["subscriber"]["name"] = {
-                        "given_name": subscriber_name.split()[0] if subscriber_name else "",
-                        "surname": " ".join(subscriber_name.split()[1:]) if len(subscriber_name.split()) > 1 else ""
+                    name_parts = subscriber_name.split()
+                    subscription_data["subscriber"]["name"] = {
+                        "given_name": name_parts[0] if name_parts else "",
+                        "surname": " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
                     }
             
-            subscription = paypalrestsdk.BillingSubscription(subscription_attributes)
+            response = requests.post(
+                f"{self.base_url}/v1/billing/subscriptions",
+                headers=headers,
+                json=subscription_data
+            )
             
-            if subscription.create():
-                # Get approval URL
-                approval_url = None
-                for link in subscription.links:
-                    if link.rel == "approve":
-                        approval_url = link.href
-                        break
+            if response.status_code not in [200, 201]:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            result = response.json()
+            
+            # Get approval URL
+            approval_url = None
+            for link in result.get("links", []):
+                if link.get("rel") == "approve":
+                    approval_url = link.get("href")
+                    break
+            
+            return {
+                "subscription_id": result.get("id"),
+                "approval_url": approval_url,
+                "status": result.get("status")
+            }
                 
-                return {
-                    "subscription_id": subscription.id,
-                    "approval_url": approval_url,
-                    "status": subscription.status
-                }
-            else:
-                raise PaymentException(f"Error creating subscription: {subscription.error}")
-                
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal subscription creation failed: {str(e)}")
     
-    @staticmethod
-    def get_subscription(subscription_id: str) -> Dict[str, Any]:
+    def get_subscription(self, subscription_id: str) -> Dict[str, Any]:
         """Get subscription details"""
         try:
-            subscription = paypalrestsdk.BillingSubscription.find(subscription_id)
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                f"{self.base_url}/v1/billing/subscriptions/{subscription_id}",
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            result = response.json()
             
             return {
-                "id": subscription.id,
-                "status": subscription.status,
-                "plan_id": subscription.plan_id,
-                "start_time": subscription.start_time if hasattr(subscription, 'start_time') else None,
-                "billing_info": subscription.billing_info if hasattr(subscription, 'billing_info') else None,
-                "subscriber": subscription.subscriber if hasattr(subscription, 'subscriber') else None
+                "id": result.get("id"),
+                "status": result.get("status"),
+                "plan_id": result.get("plan_id"),
+                "start_time": result.get("start_time"),
+                "billing_info": result.get("billing_info"),
+                "subscriber": result.get("subscriber")
             }
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"Error getting subscription: {str(e)}")
     
-    @staticmethod
-    def cancel_subscription(subscription_id: str, reason: str = "Customer request") -> Dict[str, Any]:
+    def cancel_subscription(self, subscription_id: str, reason: str = "Customer request") -> Dict[str, Any]:
         """Cancel a subscription"""
         try:
-            subscription = paypalrestsdk.BillingSubscription.find(subscription_id)
+            access_token = self.get_access_token()
             
-            cancel_note = {
-                "reason": reason
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
             }
             
-            if subscription.cancel(cancel_note):
-                return {
-                    "subscription_id": subscription_id,
-                    "status": "CANCELLED",
-                    "message": "Subscription cancelled successfully"
-                }
-            else:
-                raise PaymentException(f"Error cancelling subscription: {subscription.error}")
+            data = {"reason": reason}
+            
+            response = requests.post(
+                f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/cancel",
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code not in [200, 204]:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            return {
+                "subscription_id": subscription_id,
+                "status": "CANCELLED",
+                "message": "Subscription cancelled successfully"
+            }
                 
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal subscription cancellation failed: {str(e)}")
     
-    @staticmethod
-    def suspend_subscription(subscription_id: str, reason: str = "Suspended by admin") -> Dict[str, Any]:
+    def suspend_subscription(self, subscription_id: str, reason: str = "Suspended by admin") -> Dict[str, Any]:
         """Suspend a subscription"""
         try:
-            subscription = paypalrestsdk.BillingSubscription.find(subscription_id)
+            access_token = self.get_access_token()
             
-            suspend_note = {
-                "reason": reason
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
             }
             
-            if subscription.suspend(suspend_note):
-                return {
-                    "subscription_id": subscription_id,
-                    "status": "SUSPENDED",
-                    "message": "Subscription suspended successfully"
-                }
-            else:
-                raise PaymentException(f"Error suspending subscription: {subscription.error}")
+            data = {"reason": reason}
+            
+            response = requests.post(
+                f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/suspend",
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code not in [200, 204]:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            return {
+                "subscription_id": subscription_id,
+                "status": "SUSPENDED",
+                "message": "Subscription suspended successfully"
+            }
                 
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal subscription suspension failed: {str(e)}")
     
-    @staticmethod
-    def activate_subscription(subscription_id: str, reason: str = "Reactivated by user") -> Dict[str, Any]:
+    def activate_subscription(self, subscription_id: str, reason: str = "Reactivated by user") -> Dict[str, Any]:
         """Activate a suspended subscription"""
         try:
-            subscription = paypalrestsdk.BillingSubscription.find(subscription_id)
+            access_token = self.get_access_token()
             
-            activate_note = {
-                "reason": reason
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
             }
             
-            if subscription.activate(activate_note):
-                return {
-                    "subscription_id": subscription_id,
-                    "status": "ACTIVE",
-                    "message": "Subscription activated successfully"
-                }
-            else:
-                raise PaymentException(f"Error activating subscription: {subscription.error}")
+            data = {"reason": reason}
+            
+            response = requests.post(
+                f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/activate",
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code not in [200, 204]:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            return {
+                "subscription_id": subscription_id,
+                "status": "ACTIVE",
+                "message": "Subscription activated successfully"
+            }
                 
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal subscription activation failed: {str(e)}")
     
-    @staticmethod
-    def list_transactions(subscription_id: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    def list_transactions(self, subscription_id: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """
         List subscription transactions
         
@@ -183,28 +271,45 @@ class PayPalService:
             end_date: End date (YYYY-MM-DD)
         """
         try:
-            subscription = paypalrestsdk.BillingSubscription.find(subscription_id)
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
             
             params = {
                 "start_time": f"{start_date}T00:00:00Z",
                 "end_time": f"{end_date}T23:59:59Z"
             }
             
-            transactions = subscription.transactions(params)
+            response = requests.get(
+                f"{self.base_url}/v1/billing/subscriptions/{subscription_id}/transactions",
+                headers=headers,
+                params=params
+            )
+            
+            if response.status_code != 200:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            result = response.json()
+            transactions = result.get("transactions", [])
             
             return [{
-                "id": t.id if hasattr(t, 'id') else None,
-                "status": t.status if hasattr(t, 'status') else None,
-                "amount": t.amount_with_breakdown.gross_amount.value if hasattr(t, 'amount_with_breakdown') else None,
-                "currency": t.amount_with_breakdown.gross_amount.currency_code if hasattr(t, 'amount_with_breakdown') else None,
-                "time": t.time if hasattr(t, 'time') else None
-            } for t in transactions.get('transactions', [])]
+                "id": t.get("id"),
+                "status": t.get("status"),
+                "amount": t.get("amount_with_breakdown", {}).get("gross_amount", {}).get("value"),
+                "currency": t.get("amount_with_breakdown", {}).get("gross_amount", {}).get("currency_code"),
+                "time": t.get("time")
+            } for t in transactions]
             
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"Error listing transactions: {str(e)}")
     
-    @staticmethod
     def verify_webhook_signature(
+        self,
         transmission_id: str,
         timestamp: str,
         webhook_id: str,
@@ -219,24 +324,39 @@ class PayPalService:
         This ensures the webhook actually came from PayPal
         """
         try:
-            # Webhook event verification
-            response = paypalrestsdk.WebhookEvent.verify(
-                transmission_id=transmission_id,
-                timestamp=timestamp,
-                webhook_id=webhook_id,
-                event_body=event_body,
-                cert_url=cert_url,
-                transmission_sig=transmission_sig,
-                auth_algo=auth_algo
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "transmission_id": transmission_id,
+                "transmission_time": timestamp,
+                "cert_url": cert_url,
+                "auth_algo": auth_algo,
+                "transmission_sig": transmission_sig,
+                "webhook_id": webhook_id,
+                "webhook_event": event_body
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/v1/notifications/verify-webhook-signature",
+                headers=headers,
+                json=data
             )
             
-            return response.get('verification_status') == 'SUCCESS'
+            if response.status_code != 200:
+                return False
+            
+            result = response.json()
+            return result.get('verification_status') == 'SUCCESS'
             
         except Exception as e:
             raise PaymentException(f"Webhook verification failed: {str(e)}")
     
-    @staticmethod
-    def get_plans() -> List[Dict[str, Any]]:
+    def get_plans(self) -> List[Dict[str, Any]]:
         """Get available subscription plans"""
         # This is hardcoded but could be fetched from PayPal API
         # or stored in database
@@ -275,8 +395,8 @@ class PayPalService:
             }
         ]
     
-    @staticmethod
     def create_plan(
+        self,
         product_id: str,
         name: str,
         description: str,
@@ -296,7 +416,14 @@ class PayPalService:
             interval: MONTH or YEAR
         """
         try:
-            billing_plan_attributes = {
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            billing_plan_data = {
                 "product_id": product_id,
                 "name": name,
                 "description": description,
@@ -329,17 +456,25 @@ class PayPalService:
                 }
             }
             
-            billing_plan = paypalrestsdk.BillingPlan(billing_plan_attributes)
+            response = requests.post(
+                f"{self.base_url}/v1/billing/plans",
+                headers=headers,
+                json=billing_plan_data
+            )
             
-            if billing_plan.create():
-                return {
-                    "plan_id": billing_plan.id,
-                    "name": billing_plan.name,
-                    "status": billing_plan.status
-                }
-            else:
-                raise PaymentException(f"Error creating plan: {billing_plan.error}")
+            if response.status_code not in [200, 201]:
+                raise PaymentException(f"PayPal API error: {response.text}")
+            
+            result = response.json()
+            
+            return {
+                "plan_id": result.get("id"),
+                "name": result.get("name"),
+                "status": result.get("status")
+            }
                 
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal plan creation failed: {str(e)}")
 
