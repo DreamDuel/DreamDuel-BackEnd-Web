@@ -17,7 +17,6 @@ argon2-cffi==25.1.0
 PyJWT==2.11.0
 
 # External services
-paypalrestsdk==1.13.1
 cloudinary==1.38.0
 resend==0.7.0
 requests==2.32.3
