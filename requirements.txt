@@ -10,15 +10,17 @@ sqlalchemy==2.0.25
 alembic==1.13.1
 psycopg2-binary==2.9.9
 
-# Authentication
+# Authentication & Password Hashing
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-oauth2==1.1.1
+passlib==1.7.4
+argon2-cffi==25.1.0
+PyJWT==2.11.0
 
 # External services
 paypalrestsdk==1.13.1
 cloudinary==1.38.0
 resend==0.7.0
+requests==2.32.3
 
 # Caching and background jobs
 redis==5.0.1

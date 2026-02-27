@@ -61,18 +61,17 @@ async def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     
-    # Send verification email (temporarily disabled during development)
-    # TODO: Enable email verification in production
-    # verification_token = create_email_verification_token(new_user.email)
-    # try:
-    #     email_service.send_verification_email(
-    #         to=new_user.email,
-    #         username=new_user.username,
-    #         verification_token=verification_token
-    #     )
-    # except Exception as e:
-    #     print(f"Failed to send verification email: {e}")
-    #     pass  # Don't fail registration if email fails
+    # Send verification email
+    verification_token = create_email_verification_token(new_user.email)
+    try:
+        email_service.send_verification_email(
+            to=new_user.email,
+            username=new_user.username,
+            verification_token=verification_token
+        )
+    except Exception as e:
+        print(f"Failed to send verification email: {e}")
+        pass  # Don't fail registration if email fails
     
     # Create tokens
     access_token = create_access_token({"sub": str(new_user.id)})
@@ -189,18 +188,16 @@ async def request_password_reset(data: PasswordResetRequest, db: Session = Depen
     
     # Always return success to prevent email enumeration
     if user:
-        # TODO: Enable password reset email in production
-        # reset_token = create_password_reset_token(user.email)
-        # try:
-        #     email_service.send_password_reset_email(
-        #         to=user.email,
-        #         username=user.username,
-        #         reset_token=reset_token
-        #     )
-        # except Exception as e:
-        #     print(f"Failed to send password reset email: {e}")
-        #     pass  # Don't fail if email fails
-        pass
+        reset_token = create_password_reset_token(user.email)
+        try:
+            email_service.send_password_reset_email(
+                to=user.email,
+                username=user.username,
+                reset_token=reset_token
+            )
+        except Exception as e:
+            print(f"Failed to send password reset email: {e}")
+            pass  # Don't fail if email fails
     
     return MessageResponse(message="Password reset email sent if account exists")
 
@@ -239,35 +236,15 @@ async def verify_email(data: EmailVerificationRequest, db: Session = Depends(get
     user.is_verified = True
     db.commit()
     
-    # Send welcome email (temporarily disabled during development)
-    # TODO: Enable welcome email in production
-    # try:
-    #     email_service.send_welcome_email(to=user.email, username=user.username)
-    # except Exception as e:
-    #     print(f"Failed to send welcome email: {e}")
-    #     pass
+    # Send welcome email
+    try:
+        email_service.send_welcome_email(to=user.email, username=user.username)
+    except Exception as e:
+        print(f"Failed to send welcome email: {e}")
+        pass
     
     return MessageResponse(message="Email verified successfully")
 
 
-@router.post("/google", response_model=AuthResponse)
-async def google_oauth(data: OAuthRequest, db: Session = Depends(get_db)):
-    """Login/Register with Google OAuth"""
-    # TODO: Implement Google OAuth verification
-    # Verify token with Google API
-    # Extract email and name
-    # Create user if doesn't exist
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Google OAuth not yet implemented"
-    )
-
-
-@router.post("/apple", response_model=AuthResponse)
-async def apple_oauth(data: OAuthRequest, db: Session = Depends(get_db)):
-    """Login/Register with Apple Sign In"""
-    # TODO: Implement Apple Sign In verification
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Apple Sign In not yet implemented"
-    )
+# Note: OAuth endpoints (Google/Apple) moved to /api/oauth/ routes
+# See app/api/v1/routes/oauth.py for implementation

@@ -1,359 +1,366 @@
-# DreamDuel Backend API
+# 🎨 DreamDuel Backend API
 
-Backend API for DreamDuel - An AI-powered visual storytelling platform that transforms user prompts into engaging, illustrated narratives.
+Backend API para DreamDuel - Plataforma de generación de imágenes con IA.
 
-## 🚀 Features
+## 🚀 Tech Stack
 
-- **Authentication & Authorization**: JWT-based authentication with OAuth 2.0 support (Google/Apple)
-- **Story Management**: Full CRUD for AI-generated stories with scenes, characters, and metadata
-- **Payment Integration**: Stripe subscription management and one-time payments
-- **File Storage**: Cloudinary integration for image uploads with auto-optimization
-- **Email Service**: Transactional emails via Resend with HTML templates
-- **Analytics**: User behavior tracking and story performance metrics
-- **Caching**: Redis-based caching for improved performance
-- **Background Jobs**: Celery for async task processing
-- **Rate Limiting**: Request throttling to prevent abuse
-- **Monitoring**: Sentry integration for error tracking
+- **Framework:** FastAPI 0.109.0
+- **Database:** PostgreSQL + SQLAlchemy
+- **Cache:** Redis
+- **Authentication:** JWT + Argon2 password hashing
+- **Payments:** PayPal Subscriptions API
+- **Storage:** Cloudinary
+- **OAuth:** Google + Apple Sign In
+- **Email:** Resend
 
-## 🏗️ Architecture
+---
 
-Built with Clean Architecture / Hexagonal Architecture principles:
+## 📚 Documentación API
 
+**Swagger UI:** `http://localhost:8000/docs`  
+**ReDoc:** `http://localhost:8000/redoc`
+
+---
+
+## 🔗 Endpoints Principales
+
+### **Authentication** (`/api/auth`)
+
+```http
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/refresh
+POST /api/auth/logout
+POST /api/auth/password-reset
+POST /api/auth/password-reset/confirm
+POST /api/auth/verify-email
 ```
-app/
-├── api/                    # API layer
-│   └── v1/
-│       ├── routes/        # API endpoints
-│       └── schemas/       # Pydantic models
-├── core/                  # Application core
-│   ├── config.py         # Configuration
-│   ├── security.py       # Authentication
-│   ├── celery.py         # Background jobs
-│   └── middleware.py     # Middleware
-├── infrastructure/        # External services
-│   ├── database/         # Database models
-│   ├── external_services/ # Third-party integrations
-│   └── cache/            # Redis client
-└── utils/                # Utilities
+
+### **OAuth** (`/api/oauth`)
+
+```http
+POST /api/oauth/google      # Login con Google
+POST /api/oauth/apple       # Login con Apple
+GET  /api/oauth/google/url  # URL de autorización Google
+GET  /api/oauth/apple/config # Config de Apple Sign In
 ```
 
-## 🛠️ Tech Stack
+### **Users** (`/api/users`)
 
-- **Framework**: FastAPI 0.109.0
-- **Database**: PostgreSQL + SQLAlchemy 2.0.25
-- **Migrations**: Alembic 1.13.1
-- **Authentication**: JWT (python-jose) + OAuth 2.0
-- **Payments**: Stripe 7.12.0
-- **Storage**: Cloudinary 1.38.0
-- **Email**: Resend 0.7.0
-- **Cache**: Redis 5.0.1
-- **Background Jobs**: Celery 5.3.4
-- **Testing**: pytest 7.4.4
-- **Monitoring**: Sentry SDK
+```http
+GET    /api/users/me           # Perfil del usuario actual
+PUT    /api/users/me           # Actualizar perfil
+DELETE /api/users/me           # Eliminar cuenta
+GET    /api/users/{username}   # Perfil público
+POST   /api/users/{id}/follow  # Seguir usuario
+DELETE /api/users/{id}/unfollow # Dejar de seguir
+```
 
-## 📦 Installation
+### **Payments (PayPal)** (`/api/payments`)
 
-### Prerequisites
+```http
+GET  /api/payments/plans                    # Planes disponibles
+POST /api/payments/subscribe                # Crear suscripción
+POST /api/payments/subscription/confirm     # Confirmar suscripción
+GET  /api/payments/subscription/status      # Estado de suscripción
+POST /api/payments/subscription/cancel      # Cancelar suscripción
+POST /api/payments/subscription/reactivate  # Reactivar suscripción
+GET  /api/payments/invoices                 # Historial de facturas
+POST /api/payments/webhook                  # Webhook de PayPal
+```
 
-- Python 3.11+
-- PostgreSQL 15+
-- Redis 7+
+### **Image Generation** (`/api/generate`)
 
-### Local Development
+```http
+POST /api/generate/image      # Generar imagen con IA
+GET  /api/generate/history    # Historial de generaciones
+GET  /api/generate/{id}       # Detalles de una generación
+DELETE /api/generate/{id}     # Eliminar generación
+```
 
-1. **Clone the repository**
+### **Upload** (`/api/upload`)
+
+```http
+POST /api/upload/avatar       # Subir avatar
+POST /api/upload/image        # Subir imagen
+```
+
+### **Analytics** (`/api/analytics`)
+
+```http
+POST /api/analytics/event     # Registrar evento
+GET  /api/analytics/stats     # Estadísticas del usuario
+```
+
+---
+
+## 🔐 Autenticación
+
+Todos los endpoints (excepto register/login/oauth) requieren JWT token:
+
+```javascript
+// Header
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+---
+
+## 💳 Flujo de Suscripción PayPal
+
+### 1. Frontend: Iniciar suscripción
+
+```javascript
+const response = await fetch('/api/payments/subscribe', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    planId: 'monthly', // o 'yearly'
+    returnUrl: 'https://tu-app.com/payment/success',
+    cancelUrl: 'https://tu-app.com/payment/cancel'
+  })
+});
+
+const { approvalUrl, subscriptionId } = await response.json();
+
+// Redirigir al usuario a approvalUrl
+window.location.href = approvalUrl;
+```
+
+### 2. Usuario aprueba en PayPal
+
+PayPal redirige a: `returnUrl?subscription_id=I-XXXXXXXXX`
+
+### 3. Frontend: Confirmar suscripción
+
+```javascript
+// Extraer subscription_id de la URL
+const params = new URLSearchParams(window.location.search);
+const subscriptionId = params.get('subscription_id');
+
+// Confirmar con backend
+await fetch('/api/payments/subscription/confirm', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ subscriptionId })
+});
+
+// Usuario ahora es premium
+```
+
+---
+
+## 🔑 OAuth Flow
+
+### Google Login
+
+```javascript
+// 1. Obtener Google ID token (usando Google Sign In SDK)
+const googleUser = await google.accounts.id.initialize({
+  client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+});
+
+// 2. Enviar a backend
+const response = await fetch('/api/oauth/google', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token: googleUser.credential })
+});
+
+const { access_token, refresh_token } = await response.json();
+```
+
+### Apple Login
+
+```javascript
+// 1. Apple Sign In
+const appleResponse = await AppleID.auth.signIn();
+
+// 2. Enviar a backend
+const response = await fetch('/api/oauth/apple', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    code: appleResponse.authorization.code,
+    id_token: appleResponse.authorization.id_token
+  })
+});
+
+const { access_token, refresh_token } = await response.json();
+```
+
+---
+
+## 🛠️ Setup Local
+
+### 1. Clonar repositorio
+
 ```bash
-git clone <repository-url>
-cd BackEnd\ DREAMDUEL\ Web
+git clone https://github.com/DreamDuel/DreamDuel-BackEnd-Web.git
+cd DreamDuel-BackEnd-Web
 ```
 
-2. **Create virtual environment**
+### 2. Instalar dependencias
+
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. **Install dependencies**
-```bash
+source venv/bin/activate  # En Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. **Set up environment variables**
-```bash
-cp .env.example .env
-# Edit .env with your configuration
+### 3. Configurar variables de entorno
+
+Crear `.env`:
+
+```env
+# App
+DEBUG=True
+ENVIRONMENT=development
+SECRET_KEY=tu-secret-key-aqui
+JWT_SECRET=tu-jwt-secret-aqui
+FRONTEND_URL=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/dreamduel_dev
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# PayPal Sandbox
+PAYPAL_MODE=sandbox
+PAYPAL_CLIENT_ID=tu_paypal_client_id
+PAYPAL_CLIENT_SECRET=tu_paypal_secret
+PAYPAL_MONTHLY_PLAN_ID=P-XXXXXXXXX
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=tu_cloud_name
+CLOUDINARY_API_KEY=tu_api_key
+CLOUDINARY_API_SECRET=tu_api_secret
+
+# Resend
+RESEND_API_KEY=tu_resend_key
+FROM_EMAIL=noreply@localhost
+
+# Google OAuth
+GOOGLE_CLIENT_ID=tu_google_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=tu_google_secret
+
+# AI Services
+REPLICATE_API_KEY=tu_replicate_key
 ```
 
-5. **Run database migrations**
+### 4. Ejecutar migraciones
+
 ```bash
 alembic upgrade head
 ```
 
-6. **Start the development server**
+### 5. Iniciar servidor
+
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`
-- API Documentation: `http://localhost:8000/docs`
-- Alternative docs: `http://localhost:8000/redoc`
-
-### Using Docker
-
-1. **Build and run with Docker Compose**
-```bash
-docker-compose up -d
-```
-
-This will start:
-- PostgreSQL database (port 5432)
-- Redis cache (port 6379)
-- FastAPI application (port 8000)
-- Celery worker
-- Celery beat scheduler
-
-2. **Run migrations inside container**
-```bash
-docker-compose exec api alembic upgrade head
-```
-
-3. **View logs**
-```bash
-docker-compose logs -f api
-```
-
-## 🧪 Testing
-
-Run tests with pytest:
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app --cov-report=html
-
-# Run specific test file
-pytest tests/test_auth.py -v
-```
-
-## 🚢 Deployment
-
-### Railway (Recommended)
-
-1. **Install Railway CLI**
-```bash
-npm install -g @railway/cli
-railway login
-```
-
-2. **Initialize project**
-```bash
-railway init
-```
-
-3. **Add environment variables**
-```bash
-railway variables set DATABASE_URL=<your-postgres-url>
-railway variables set REDIS_URL=<your-redis-url>
-railway variables set JWT_SECRET=<random-secret>
-railway variables set STRIPE_SECRET_KEY=<your-stripe-key>
-# ... add all required variables
-```
-
-4. **Deploy**
-```bash
-railway up
-```
-
-### Manual Deployment
-
-1. **Set environment variables on your server**
-
-2. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Run migrations**
-```bash
-alembic upgrade head
-```
-
-4. **Start with Gunicorn**
-```bash
-gunicorn app.main:app \
-  --workers 4 \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000
-```
-
-## 📚 API Documentation
-
-### Authentication
-
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login with credentials
-- `POST /api/auth/refresh` - Refresh access token
-- `POST /api/auth/logout` - Logout user
-- `POST /api/auth/password-reset` - Request password reset
-- `POST /api/auth/verify-email` - Verify email address
-
-### Users
-
-- `GET /api/users/me` - Get current user profile
-- `PUT /api/users/me` - Update user profile
-- `POST /api/users/{id}/follow` - Follow user
-- `DELETE /api/users/{id}/follow` - Unfollow user
-- `GET /api/users/{id}/stories` - Get user's stories
-
-### Stories
-
-- `GET /api/stories` - List stories (paginated)
-- `GET /api/stories/trending` - Get trending stories
-- `GET /api/stories/{id}` - Get story details
-- `POST /api/stories` - Create new story
-- `PUT /api/stories/{id}` - Update story
-- `DELETE /api/stories/{id}` - Delete story
-- `POST /api/stories/{id}/like` - Like/unlike story
-- `POST /api/stories/{id}/save` - Save/unsave story
-
-### Payments
-
-- `POST /api/payments/subscribe` - Create subscription
-- `POST /api/payments/cancel` - Cancel subscription
-- `POST /api/payments/webhook` - Stripe webhook handler
-
-### Analytics
-
-- `POST /api/analytics/event` - Track analytics event
-- `GET /api/analytics/user/metrics` - Get user metrics
-- `GET /api/analytics/story/{id}` - Get story analytics
-
-Full API documentation available at `/docs` when running the server.
-
-## 🔐 Environment Variables
-
-Required environment variables (see `.env.example`):
-
-```env
-# App
-ENVIRONMENT=development
-DEBUG=True
-APP_NAME=DreamDuel
-SECRET_KEY=your-secret-key
-
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/dreamduel
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-
-# JWT
-JWT_SECRET=your-jwt-secret
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# Stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# Cloudinary
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-
-# Resend
-RESEND_API_KEY=re_...
-
-# Sentry (optional)
-SENTRY_DSN=https://...
-
-# CORS
-CORS_ORIGINS=http://localhost:3000,https://yourdomain.com
-```
-
-## 🤖 AI Generation (Placeholder)
-
-The AI generation endpoints (`/api/generate/*`) are currently **PLACEHOLDER** implementations returning mock data. To integrate with actual AI services:
-
-1. Choose your AI provider (Replicate, OpenAI DALL-E, Stable Diffusion, etc.)
-2. Implement the service in `app/infrastructure/external_services/ai_image_service.py`
-3. Update the generation endpoints in `app/api/v1/routes/generate.py`
-
-See TODO comments in the code for specific integration points.
-
-## 📝 Database Migrations
-
-Create a new migration:
-```bash
-alembic revision --autogenerate -m "Description of changes"
-```
-
-Apply migrations:
-```bash
-alembic upgrade head
-```
-
-Rollback last migration:
-```bash
-alembic downgrade -1
-```
-
-## 🔄 Background Jobs
-
-Celery tasks are defined in `app/core/celery.py`:
-
-- `send_email_async` - Send emails in background
-- `generate_story_images_async` - Generate AI images (placeholder)
-- `process_analytics_batch` - Batch process analytics
-- `cleanup_expired_tokens` - Clean up expired tokens
-
-Start Celery worker:
-```bash
-celery -A app.core.celery worker --loglevel=info
-```
-
-Start Celery beat (for periodic tasks):
-```bash
-celery -A app.core.celery beat --loglevel=info
-```
-
-## 🛡️ Security
-
-- JWT tokens with secure secret keys
-- Password hashing with bcrypt
-- Rate limiting (60 requests/minute per IP)
-- CORS configuration
-- Input validation with Pydantic
-- SQL injection prevention via ORM
-- Stripe webhook signature verification
-
-## 📊 Monitoring
-
-- Health check endpoint: `GET /health`
-- Metrics endpoint: `GET /metrics` (placeholder for Prometheus)
-- Sentry for error tracking and performance monitoring
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is proprietary software for DreamDuel.
-
-## 🆘 Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Contact the development team
+**API disponible en:** http://localhost:8000  
+**Docs:** http://localhost:8000/docs
 
 ---
 
-Built with ❤️ using FastAPI and Python
+## 📦 Scripts Útiles
+
+```bash
+# Crear plan de PayPal
+python create_paypal_plan.py
+
+# Testing de PayPal
+python test_paypal.py
+
+# Ejecutar migraciones
+alembic upgrade head
+
+# Crear nueva migración
+alembic revision --autogenerate -m "descripcion"
+
+# Rollback migración
+alembic downgrade -1
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Ejecutar todos los tests
+pytest
+
+# Con cobertura
+pytest --cov=app tests/
+
+# Test específico
+pytest tests/test_auth.py
+```
+
+---
+
+## 🌐 Deploy
+
+Ver [DEPLOYMENT.md](DEPLOYMENT.md) para guía completa de deployment.
+
+**Quick start con Railway:**
+
+1. Push a GitHub
+2. Conectar Railway con GitHub
+3. Configurar variables de entorno
+4. Railway hace auto-deploy
+
+---
+
+## 📝 Variables de Entorno
+
+Ver `.env.example` para lista completa de variables requeridas.
+
+**Mínimas para desarrollo:**
+- `DATABASE_URL`
+- `REDIS_URL`
+- `SECRET_KEY`
+- `JWT_SECRET`
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `CLOUDINARY_*`
+
+---
+
+## 🔧 Configuración de Webhooks
+
+Ver [WEBHOOKS_SETUP.md](WEBHOOKS_SETUP.md) para:
+- PayPal Webhooks
+- Google OAuth setup
+- Apple Sign In setup
+
+---
+
+## 🤝 Contribuir
+
+1. Fork el proyecto
+2. Crear branch (`git checkout -b feature/AmazingFeature`)
+3. Commit cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a branch (`git push origin feature/AmazingFeature`)
+5. Abrir Pull Request
+
+---
+
+## 📄 Licencia
+
+Privado - DreamDuel © 2026
+
+---
+
+## 📞 Soporte
+
+Para preguntas o issues, crear un issue en GitHub o contactar al equipo de desarrollo.

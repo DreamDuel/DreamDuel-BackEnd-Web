@@ -1,7 +1,7 @@
 """Main FastAPI application"""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -11,9 +11,11 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from app.core.config import settings
 from app.core.exceptions import DreamDuelException
 from app.core.middleware import RateLimitMiddleware
-from app.infrastructure.database.session import init_db
+from app.infrastructure.database.session import init_db, get_db
 from app.infrastructure.cache.redis_client import redis_client
 from app.api.router import api_router
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 
 @asynccontextmanager
@@ -69,9 +71,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rate limiting middleware (temporarily disabled for development)
-# TODO: Fix async issues and re-enable in production
-# app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
+# Rate limiting middleware
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
 
 
 # Custom exception handlers
@@ -117,19 +118,25 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Health check endpoint
 @app.get("/health", tags=["Health"])
-async def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     db_status = "ok"
     redis_status = "ok"
     
+    # Check Database
     try:
-        # Check Redis
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = "error"
+        print(f"Database health check failed: {e}")
+    
+    # Check Redis
+    try:
         if not redis_client.client or not redis_client.client.ping():
             redis_status = "error"
-    except Exception:
+    except Exception as e:
         redis_status = "error"
-    
-    # TODO: Add database health check
+        print(f"Redis health check failed: {e}")
     
     overall_status = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
     

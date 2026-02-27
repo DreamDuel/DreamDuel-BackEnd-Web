@@ -32,15 +32,27 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)  # Nullable for OAuth users
+    full_name = Column(String(255), nullable=True)
     avatar_url = Column(String(500), nullable=True)
+    profile_picture = Column(String(500), nullable=True)  # For OAuth profile pictures
     bio = Column(Text, nullable=True)
     is_premium = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
+    
+    # OAuth fields
+    oauth_provider = Column(String(50), nullable=True)  # "google", "apple", etc.
+    oauth_id = Column(String(255), nullable=True)  # User ID from OAuth provider
+    
+    # Referral system
     referral_code = Column(String(20), unique=True, nullable=False, index=True)
     referred_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    # Free tier limits
     free_images_left = Column(Integer, default=10, nullable=False)
     free_images_reset_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
