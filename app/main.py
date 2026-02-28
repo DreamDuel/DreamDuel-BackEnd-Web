@@ -116,10 +116,10 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health check endpoint
+# Health check endpoint  
 @app.get("/health", tags=["Health"])
 async def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint"""
+    """Health check endpoint - verifies all connections"""
     db_status = "ok"
     redis_status = "ok"
     
