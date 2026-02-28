@@ -12,36 +12,36 @@ class Settings(BaseSettings):
     APP_NAME: str = "DreamDuel"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
-    SECRET_KEY: str
+    SECRET_KEY: str = "change-me-in-production-use-generate-secrets-py"
     API_V1_PREFIX: str = "/api"
     
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: str = "postgresql://user:pass@localhost/db"
     
     # Redis
-    REDIS_URL: str
+    REDIS_URL: str = "redis://localhost:6379/0"
     
     # JWT
-    JWT_SECRET: str
+    JWT_SECRET: str = "change-me-in-production-use-generate-secrets-py"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # PayPal Payment Integration (Recommended for Peru)
     PAYPAL_MODE: str = "sandbox"  # sandbox or live
-    PAYPAL_CLIENT_ID: str
-    PAYPAL_CLIENT_SECRET: str
+    PAYPAL_CLIENT_ID: str = "dummy-client-id"
+    PAYPAL_CLIENT_SECRET: str = "dummy-client-secret"
     PAYPAL_WEBHOOK_ID: Optional[str] = None
     PAYPAL_MONTHLY_PLAN_ID: Optional[str] = None
     PAYPAL_YEARLY_PLAN_ID: Optional[str] = None
     
     # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str
-    CLOUDINARY_API_KEY: str
-    CLOUDINARY_API_SECRET: str
+    CLOUDINARY_CLOUD_NAME: str = "dummy-cloud-name"
+    CLOUDINARY_API_KEY: str = "dummy-api-key"
+    CLOUDINARY_API_SECRET: str = "dummy-api-secret"
     
     # Resend
-    RESEND_API_KEY: str
+    RESEND_API_KEY: str = "re_dummy_api_key"
     FROM_EMAIL: str = "noreply@dreamduel.com"
     
     # OAuth (optional)
