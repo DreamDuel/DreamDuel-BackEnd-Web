@@ -1,8 +1,4 @@
-"""Railway.app deployment configuration"""
-
-# This file is detected by Railway for Python projects
-# Railway will automatically install dependencies from requirements.txt
-# and run the start command defined in Procfile or use uvicorn
+# Railway deployment configuration for DreamDuel Backend
 
 [build]
 builder = "nixpacks"
@@ -10,8 +6,6 @@ builder = "nixpacks"
 [deploy]
 startCommand = "alembic upgrade head && gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
 healthcheckPath = "/health"
-healthcheckTimeout = 100
-restartPolicyType = "always"
-
-[env]
-PYTHON_VERSION = "3.11"
+healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
