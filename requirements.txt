@@ -19,7 +19,7 @@ PyJWT==2.11.0
 # External services
 cloudinary==1.38.0
 resend==0.7.0
-requests==2.32.3
+requests==2.31.0
 
 # Caching and background jobs
 redis==5.0.1
