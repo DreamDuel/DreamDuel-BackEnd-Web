@@ -37,7 +37,7 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     profile_picture = Column(String(500), nullable=True)  # For OAuth profile pictures
     bio = Column(Text, nullable=True)
-    is_premium = Column(Boolean, default=False, nullable=False)
+    is_premium = Column(Boolean, default=False, nullable=False)  # Deprecated - kept for compatibility
     is_verified = Column(Boolean, default=False, nullable=False)
     
     # OAuth fields
@@ -48,7 +48,11 @@ class User(Base):
     referral_code = Column(String(20), unique=True, nullable=False, index=True)
     referred_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     
-    # Free tier limits
+    # Image generation tracking - Pay per image model
+    total_images_generated = Column(Integer, default=0, nullable=False)  # Total images generated ever
+    paid_images_count = Column(Integer, default=0, nullable=False)  # Images purchased with payment
+    
+    # Deprecated fields (kept for backward compatibility)
     free_images_left = Column(Integer, default=10, nullable=False)
     free_images_reset_at = Column(DateTime(timezone=True), nullable=True)
     
@@ -145,19 +149,23 @@ class Subscription(Base):
 
 
 class Invoice(Base):
-    """Invoice model (PayPal invoices)"""
+    """Invoice model - Payment for individual images"""
     __tablename__ = "invoices"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     
     # PayPal fields
-    paypal_sale_id = Column(String(100), unique=True, nullable=True)
+    paypal_order_id = Column(String(100), unique=True, nullable=True)  # PayPal Order ID
+    paypal_capture_id = Column(String(100), unique=True, nullable=True)  # PayPal Capture ID
+    paypal_sale_id = Column(String(100), unique=True, nullable=True)  # Deprecated - kept for compatibility
     
-    # Common fields
-    amount = Column(Float, nullable=False)  # Amount
+    # Payment details
+    item_type = Column(String(50), default="image_generation", nullable=False)  # Type of purchase
+    quantity = Column(Integer, default=1, nullable=False)  # Number of images purchased
+    amount = Column(Float, nullable=False)  # Total amount paid
     currency = Column(String(10), default="USD", nullable=False)
-    status = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False)  # PENDING, COMPLETED, FAILED, REFUNDED
     invoice_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
@@ -165,7 +173,7 @@ class Invoice(Base):
     user = relationship("User", back_populates="invoices")
     
     def __repr__(self):
-        return f"<Invoice {self.paypal_sale_id}>"
+        return f"<Invoice {self.paypal_order_id} - {self.quantity} image(s)>"
 
 
 class AnalyticsEvent(Base):

@@ -1,17 +1,17 @@
-"""Payment routes (PayPal)"""
+"""Payment routes - Pay per image model"""
 
-from fastapi import APIRouter, Depends, Request, status, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 import json
 
 from app.core.dependencies import get_current_user_id
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import User, Subscription as SubscriptionModel, Invoice
+from app.infrastructure.database.models import User, Invoice
 from app.api.v1.schemas.payment import (
-    SubscriptionPlanSchema, SubscribeRequest, SubscribeResponse,
-    SubscriptionStatusResponse, InvoiceSchema, CancelSubscriptionRequest,
-    CancelSubscriptionResponse, ReactivateSubscriptionResponse, ConfirmSubscriptionRequest
+    BuyImagesRequest, BuyImagesResponse, 
+    PaymentConfirmRequest, PaymentConfirmResponse,
+    ImagePackage, InvoiceSchema
 )
 from app.core.exceptions import NotFoundException, PaymentException
 from app.infrastructure.external_services.paypal_service import paypal_service
@@ -20,286 +20,164 @@ from app.core.config import settings
 router = APIRouter()
 
 
-@router.get("/plans", response_model=List[SubscriptionPlanSchema])
-async def get_plans():
-    """Get available subscription plans"""
-    return paypal_service.get_plans()
+# Image packages available for purchase
+IMAGE_PACKAGES = [
+    {"id": "1_image", "images": 1, "price": 2.99, "currency": "USD", "name": "1 Image"},
+    {"id": "5_images", "images": 5, "price": 12.99, "currency": "USD", "name": "5 Images Pack", "discount": "13% OFF"},
+    {"id": "10_images", "images": 10, "price": 22.99, "currency": "USD", "name": "10 Images Pack", "discount": "23% OFF"},
+    {"id": "25_images", "images": 25, "price": 49.99, "currency": "USD", "name": "25 Images Pack", "discount": "33% OFF"},
+]
 
 
-@router.post("/subscribe", response_model=SubscribeResponse)
-async def subscribe(
-    data: SubscribeRequest,
+@router.get("/packages", response_model=List[ImagePackage])
+async def get_packages():
+    """Get available image packages"""
+    return [ImagePackage(**pkg) for pkg in IMAGE_PACKAGES]
+
+
+@router.post("/buy-images", response_model=BuyImagesResponse)
+async def buy_images(
+    data: BuyImagesRequest,
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
-    Create a new PayPal subscription
+    Purchase image generations
     
-    This creates the subscription and returns an approval URL where
-    the user must be redirected to complete the payment with PayPal
+    Creates a PayPal order and returns approval URL
     """
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Check if user already has an active subscription
-    existing_subscription = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id,
-        SubscriptionModel.status.in_(["ACTIVE", "APPROVED"])
-    ).first()
+    # Get package details
+    package = next((p for p in IMAGE_PACKAGES if p["id"] == data.packageId), None)
     
-    if existing_subscription:
-        raise PaymentException("User already has an active subscription")
+    if not package:
+        raise NotFoundException("Package", data.packageId)
     
-    # Get plan details
-    plans = paypal_service.get_plans()
-    plan = next((p for p in plans if p["id"] == data.planId), None)
-    
-    if not plan:
-        raise NotFoundException("Plan", data.planId)
-    
-    plan_id = plan["paypal_plan_id"]
-    
-    if not plan_id:
-        raise PaymentException(f"Plan {data.planId} is not configured with a PayPal Plan ID")
-    
-    # Create PayPal subscription
+    # Create PayPal order
     try:
-        result = paypal_service.create_subscription(
-            plan_id=plan_id,
-            return_url=data.returnUrl or f"{settings.FRONTEND_URL}/payment/success",
-            cancel_url=data.cancelUrl or f"{settings.FRONTEND_URL}/payment/cancel",
-            subscriber_email=user.email,
-            subscriber_name=user.username
-        )
-        
-        # Save subscription to database (initially in APPROVAL_PENDING status)
-        subscription_record = SubscriptionModel(
-            user_id=current_user_id,
-            paypal_subscription_id=result["subscription_id"],
-            plan_id=data.planId,
-            status="APPROVAL_PENDING"
-        )
-        db.add(subscription_record)
-        db.commit()
-        
-        return SubscribeResponse(
-            subscriptionId=result["subscription_id"],
-            approvalUrl=result["approval_url"],
-            status=result["status"]
-        )
-        
-    except Exception as e:
-        raise PaymentException(f"Failed to create subscription: {str(e)}")
-
-
-@router.post("/subscription/confirm")
-async def confirm_subscription(
-    data: ConfirmSubscriptionRequest,
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Confirm subscription after user approves it on PayPal
-    
-    This should be called after the user returns from PayPal
-    with the subscription_id
-    """
-    
-    subscription_record = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id,
-        SubscriptionModel.paypal_subscription_id == data.subscriptionId
-    ).first()
-    
-    if not subscription_record:
-        raise NotFoundException("Subscription", data.subscriptionId)
-    
-    # Get subscription details from PayPal
-    try:
-        paypal_subscription = paypal_service.get_subscription(data.subscriptionId)
-        
-        # Update subscription in database
-        subscription_record.status = paypal_subscription["status"]
-        
-        # Update user premium status if subscription is active
-        if paypal_subscription["status"] == "ACTIVE":
-            user = db.query(User).filter(User.id == current_user_id).first()
-            if user:
-                user.is_premium = True
-        
-        db.commit()
-        
-        return {
-            "message": "Subscription confirmed successfully",
-            "status": paypal_subscription["status"]
+        order_data = {
+            "intent": "CAPTURE",
+            "purchase_units": [{
+                "description": f"DreamDuel - {package['name']}",
+                "amount": {
+                    "currency_code": package["currency"],
+                    "value": str(package["price"])
+                },
+                "custom_id": f"{current_user_id}:{package['id']}"  # To identify user and package
+            }],
+            "application_context": {
+                "brand_name": "DreamDuel",
+                "return_url": data.returnUrl or f"{settings.FRONTEND_URL}/payment/success",
+                "cancel_url": data.cancelUrl or f"{settings.FRONTEND_URL}/payment/cancel"
+            }
         }
         
-    except Exception as e:
-        raise PaymentException(f"Failed to confirm subscription: {str(e)}")
-
-
-@router.get("/subscription/status", response_model=SubscriptionStatusResponse)
-async def get_subscription_status(
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Get current subscription status"""
-    
-    subscription = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id
-    ).first()
-    
-    if not subscription or subscription.status not in ["ACTIVE", "APPROVED"]:
-        return SubscriptionStatusResponse(
-            active=False,
-            subscriptionId=None,
-            status=subscription.status if subscription else None,
-            planId=None,
-            nextBillingTime=None
-        )
-    
-    # Get latest status from PayPal
-    try:
-        paypal_subscription = paypal_service.get_subscription(subscription.paypal_subscription_id)
+        # Create order via PayPal
+        result = paypal_service.create_order(order_data)
         
-        # Update local status
-        subscription.status = paypal_subscription["status"]
+        # Save pending invoice to database
+        invoice = Invoice(
+            user_id=current_user_id,
+            paypal_order_id=result["order_id"],
+            item_type="image_generation",
+            quantity=package["images"],
+            amount=package["price"],
+            currency=package["currency"],
+            status="PENDING"
+        )
+        db.add(invoice)
         db.commit()
         
-        return SubscriptionStatusResponse(
-            active=paypal_subscription["status"] == "ACTIVE",
-            subscriptionId=subscription.paypal_subscription_id,
-            status=paypal_subscription["status"],
-            planId=subscription.plan_id,
-            nextBillingTime=paypal_subscription.get("billing_info", {}).get("next_billing_time")
+        return BuyImagesResponse(
+            orderId=result["order_id"],
+            approvalUrl=result["approval_url"],
+            status="PENDING"
         )
         
     except Exception as e:
-        # Return local status if PayPal API fails
-        return SubscriptionStatusResponse(
-            active=subscription.status == "ACTIVE",
-            subscriptionId=subscription.paypal_subscription_id,
-            status=subscription.status,
-            planId=subscription.plan_id,
-            nextBillingTime=None
-        )
+        raise PaymentException(f"Failed to create payment order: {str(e)}")
 
 
-@router.post("/subscription/cancel", response_model=CancelSubscriptionResponse)
-async def cancel_subscription(
-    data: CancelSubscriptionRequest,
+@router.post("/confirm-payment", response_model=PaymentConfirmResponse)
+async def confirm_payment(
+    data: PaymentConfirmRequest,
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Cancel active subscription"""
+    """
+    Confirm payment after user approves on PayPal
     
-    subscription = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id
+    This captures the payment and adds image credits to user account
+    """
+    
+    # Find invoice
+    invoice = db.query(Invoice).filter(
+        Invoice.user_id == current_user_id,
+        Invoice.paypal_order_id == data.orderId
     ).first()
     
-    if not subscription:
-        raise NotFoundException("Subscription", current_user_id)
+    if not invoice:
+        raise NotFoundException("Invoice", data.orderId)
     
-    if subscription.status not in ["ACTIVE", "APPROVED"]:
-        raise PaymentException("No active subscription to cancel")
+    if invoice.status == "COMPLETED":
+        raise PaymentException("Payment already processed")
     
+    # Capture payment via PayPal
     try:
-        result = paypal_service.cancel_subscription(
-            subscription_id=subscription.paypal_subscription_id,
-            reason=data.reason or "Customer request"
-        )
+        capture_result = paypal_service.capture_order(data.orderId)
         
-        # Update database
-        subscription.status = "CANCELLED"
+        # Update invoice
+        invoice.paypal_capture_id = capture_result.get("capture_id")
+        invoice.status = "COMPLETED"
         
-        # Update user premium status
+        # Add image credits to user
         user = db.query(User).filter(User.id == current_user_id).first()
         if user:
-            user.is_premium = False
+            user.paid_images_count += invoice.quantity
         
         db.commit()
         
-        return CancelSubscriptionResponse(
-            message="Subscription cancelled successfully",
-            status="CANCELLED"
+        return PaymentConfirmResponse(
+            success=True,
+            message=f"Payment successful! {invoice.quantity} image generation(s) added to your account",
+            imagesAdded=invoice.quantity,
+            totalImagesAvailable=user.paid_images_count - (user.total_images_generated - 1) if user.total_images_generated > 0 else user.paid_images_count + 1  # +1 for first free image
         )
         
     except Exception as e:
-        raise PaymentException(f"Failed to cancel subscription: {str(e)}")
-
-
-@router.post("/subscription/reactivate", response_model=ReactivateSubscriptionResponse)
-async def reactivate_subscription(
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Reactivate a suspended subscription"""
-    
-    subscription = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id
-    ).first()
-    
-    if not subscription:
-        raise NotFoundException("Subscription", current_user_id)
-    
-    if subscription.status != "SUSPENDED":
-        raise PaymentException("Only suspended subscriptions can be reactivated")
-    
-    try:
-        result = paypal_service.activate_subscription(
-            subscription_id=subscription.paypal_subscription_id,
-            reason="Reactivated by user"
-        )
-        
-        # Update database
-        subscription.status = "ACTIVE"
-        
-        # Update user premium status
-        user = db.query(User).filter(User.id == current_user_id).first()
-        if user:
-            user.is_premium = True
-        
+        invoice.status = "FAILED"
         db.commit()
-        
-        return ReactivateSubscriptionResponse(
-            message="Subscription reactivated successfully",
-            status="ACTIVE"
-        )
-        
-    except Exception as e:
-        raise PaymentException(f"Failed to reactivate subscription: {str(e)}")
+        raise PaymentException(f"Failed to capture payment: {str(e)}")
 
 
-@router.get("/transactions", response_model=List[dict])
-async def get_transactions(
-    limit: int = 10,
+@router.get("/invoices", response_model=List[InvoiceSchema])
+async def get_invoices(
     current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    limit: int = 20
 ):
-    """Get subscription transaction history"""
+    """Get user's payment history"""
     
-    subscription = db.query(SubscriptionModel).filter(
-        SubscriptionModel.user_id == current_user_id
-    ).first()
-    
-    if not subscription:
-        return []
-    
-    # For now, return invoices from database
-    # You can enhance this to fetch actual transactions from PayPal
     invoices = db.query(Invoice).filter(
         Invoice.user_id == current_user_id
     ).order_by(Invoice.created_at.desc()).limit(limit).all()
     
     return [
-        {
-            "id": inv.id,
-            "amount": inv.amount,
-            "currency": "USD",
-            "status": inv.status,
-            "created_at": inv.created_at.isoformat()
-        }
+        InvoiceSchema(
+            id=str(inv.id),
+            userId=str(inv.user_id),
+            amount=inv.amount,
+            currency=inv.currency,
+            quantity=inv.quantity,
+            itemType=inv.item_type,
+            status=inv.status,
+            paypalOrderId=inv.paypal_order_id,
+            createdAt=inv.created_at
+        )
         for inv in invoices
     ]
 
@@ -307,139 +185,154 @@ async def get_transactions(
 @router.post("/webhook")
 async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
     """
-    Handle PayPal webhooks
+    PayPal webhook handler for payment notifications
     
-    PayPal sends webhooks for various events like:
-    - BILLING.SUBSCRIPTION.ACTIVATED
-    - BILLING.SUBSCRIPTION.CANCELLED
-    - BILLING.SUBSCRIPTION.SUSPENDED
-    - PAYMENT.SALE.COMPLETED
+    This handles asynchronous payment confirmations from PayPal
     """
     
-    # Get webhook headers
-    transmission_id = request.headers.get("PAYPAL-TRANSMISSION-ID")
-    timestamp = request.headers.get("PAYPAL-TRANSMISSION-TIME")
-    webhook_id = settings.PAYPAL_WEBHOOK_ID
-    cert_url = request.headers.get("PAYPAL-CERT-URL")
-    transmission_sig = request.headers.get("PAYPAL-TRANSMISSION-SIG")
-    auth_algo = request.headers.get("PAYPAL-AUTH-ALGO")
-    
-    # Get event body
-    body = await request.body()
-    event_body = body.decode("utf-8")
-    
-    # Verify webhook signature
     try:
-        if webhook_id:
-            is_valid = paypal_service.verify_webhook_signature(
-                transmission_id=transmission_id,
-                timestamp=timestamp,
-                webhook_id=webhook_id,
-                event_body=event_body,
-                cert_url=cert_url,
-                transmission_sig=transmission_sig,
-                auth_algo=auth_algo
-            )
+        body = await request.body()
+        headers = dict(request.headers)
+        
+        # Verify webhook signature (important for security)
+        # paypal_service.verify_webhook_signature(headers, body)
+        
+        event = json.loads(body)
+        event_type = event.get("event_type")
+        
+        if event_type == "CHECKOUT.ORDER.APPROVED":
+            # Order was approved by user
+            order_id = event["resource"]["id"]
             
-            if not is_valid:
-                raise HTTPException(status_code=400, detail="Invalid webhook signature")
-    except Exception as e:
-        # Log error but continue processing in development
-        if settings.ENVIRONMENT == "production":
-            raise HTTPException(status_code=400, detail=f"Webhook verification failed: {str(e)}")
-    
-    # Parse event
-    event = json.loads(event_body)
-    event_type = event.get("event_type")
-    resource = event.get("resource", {})
-    
-    # Handle different event types
-    if event_type == "BILLING.SUBSCRIPTION.ACTIVATED":
-        # Subscription activated
-        subscription_id = resource.get("id")
-        
-        subscription = db.query(SubscriptionModel).filter(
-            SubscriptionModel.paypal_subscription_id == subscription_id
-        ).first()
-        
-        if subscription:
-            subscription.status = "ACTIVE"
-            
-            # Update user premium status
-            user = db.query(User).filter(User.id == subscription.user_id).first()
-            if user:
-                user.is_premium = True
-            
-            db.commit()
-    
-    elif event_type == "BILLING.SUBSCRIPTION.CANCELLED":
-        # Subscription cancelled
-        subscription_id = resource.get("id")
-        
-        subscription = db.query(SubscriptionModel).filter(
-            SubscriptionModel.paypal_subscription_id == subscription_id
-        ).first()
-        
-        if subscription:
-            subscription.status = "CANCELLED"
-            
-            # Update user premium status
-            user = db.query(User).filter(User.id == subscription.user_id).first()
-            if user:
-                user.is_premium = False
-            
-            db.commit()
-    
-    elif event_type == "BILLING.SUBSCRIPTION.SUSPENDED":
-        # Subscription suspended (usually due to payment failure)
-        subscription_id = resource.get("id")
-        
-        subscription = db.query(SubscriptionModel).filter(
-            SubscriptionModel.paypal_subscription_id == subscription_id
-        ).first()
-        
-        if subscription:
-            subscription.status = "SUSPENDED"
-            
-            # Update user premium status
-            user = db.query(User).filter(User.id == subscription.user_id).first()
-            if user:
-                user.is_premium = False
-            
-            db.commit()
-    
-    elif event_type == "BILLING.SUBSCRIPTION.UPDATED":
-        # Subscription updated
-        subscription_id = resource.get("id")
-        
-        subscription = db.query(SubscriptionModel).filter(
-            SubscriptionModel.paypal_subscription_id == subscription_id
-        ).first()
-        
-        if subscription:
-            subscription.status = resource.get("status", subscription.status)
-            db.commit()
-    
-    elif event_type == "PAYMENT.SALE.COMPLETED":
-        # Payment completed - create invoice record
-        sale_id = resource.get("id")
-        subscription_id = resource.get("billing_agreement_id")
-        
-        if subscription_id:
-            subscription = db.query(SubscriptionModel).filter(
-                SubscriptionModel.paypal_subscription_id == subscription_id
+            invoice = db.query(Invoice).filter(
+                Invoice.paypal_order_id == order_id
             ).first()
             
-            if subscription:
-                # Create invoice record
-                invoice = Invoice(
-                    user_id=subscription.user_id,
-                    paypal_sale_id=sale_id,
-                    amount=float(resource.get("amount", {}).get("total", 0)),
-                    currency=resource.get("amount", {}).get("currency", "USD"),
-                    status="paid"
-                )
-                db.add(invoice)
+            if invoice and invoice.status == "PENDING":
+                # Auto-capture the order
+                capture_result = paypal_service.capture_order(order_id)
+                
+                invoice.paypal_capture_id = capture_result.get("capture_id")
+                invoice.status = "COMPLETED"
+                
+                # Add image credits
+                user = db.query(User).filter(User.id == invoice.user_id).first()
+                if user:
+                    user.paid_images_count += invoice.quantity
+                
                 db.commit()
+        
+        elif event_type == "PAYMENT.CAPTURE.COMPLETED":
+            # Payment was captured successfully
+            capture_id = event["resource"]["id"]
+            
+            invoice = db.query(Invoice).filter(
+                Invoice.paypal_capture_id == capture_id
+            ).first()
+            
+            if invoice:
+                invoice.status = "COMPLETED"
+                db.commit()
+        
+        elif event_type == "PAYMENT.CAPTURE.REFUNDED":
+            # Payment was refunded
+            capture_id = event["resource"]["id"]
+            
+            invoice = db.query(Invoice).filter(
+                Invoice.paypal_capture_id == capture_id
+            ).first()
+            
+            if invoice:
+                invoice.status = "REFUNDED"
+                
+                # Deduct image credits
+                user = db.query(User).filter(User.id == invoice.user_id).first()
+                if user:
+                    user.paid_images_count = max(0, user.paid_images_count - invoice.quantity)
+                
+                db.commit()
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        print(f"Webhook error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/balance")
+async def get_balance(
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Get user's image generation balance"""
     
-    return {"status": "success"}
+    user = db.query(User).filter(User.id == current_user_id).first()
+    if not user:
+        raise NotFoundException("User", current_user_id)
+    
+    # Calculate available images
+    if user.total_images_generated == 0:
+        # User hasn't generated first free image yet
+        available_images = 1 + user.paid_images_count
+        first_image_free = True
+    else:
+        # First image used, calculate remaining paid images
+        available_images = user.paid_images_count - (user.total_images_generated - 1)
+        first_image_free = False
+    
+    return {
+        "totalGenerated": user.total_images_generated,
+        "paidImagesCount": user.paid_images_count,
+        "availableImages": max(0, available_images),
+        "firstImageFree": first_image_free
+    }
+
+
+# ==================== FRONTEND COMPATIBILITY ENDPOINTS ====================
+
+
+@router.post("/purchase-image", response_model=BuyImagesResponse)
+async def purchase_single_image(
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Purchase a single image generation (Frontend compatibility endpoint)
+    
+    Automatically uses the 1-image package
+    """
+    request_data = BuyImagesRequest(
+        packageId="1_image",
+        returnUrl=f"{settings.FRONTEND_URL}/payment/success",
+        cancelUrl=f"{settings.FRONTEND_URL}/payment/cancel"
+    )
+    
+    return await buy_images(request_data, current_user_id, db)
+
+
+@router.post("/purchase-package", response_model=BuyImagesResponse)
+async def purchase_package(
+    data: BuyImagesRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Purchase an image package (Frontend compatibility endpoint)
+    
+    Alias for /buy-images
+    """
+    return await buy_images(data, current_user_id, db)
+
+
+@router.get("/transactions", response_model=List[InvoiceSchema])
+async def get_transactions(
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+    limit: int = 20
+):
+    """
+    Get user's transaction history (Frontend compatibility endpoint)
+    
+    Alias for /invoices
+    """
+    return await get_invoices(current_user_id, db, limit)

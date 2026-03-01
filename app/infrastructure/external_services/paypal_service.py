@@ -477,6 +477,99 @@ class PayPalService:
             raise PaymentException(f"PayPal API request failed: {str(e)}")
         except Exception as e:
             raise PaymentException(f"PayPal plan creation failed: {str(e)}")
+    
+    def create_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a PayPal order for one-time payments
+        
+        Args:
+            order_data: Order data including intent, purchase_units, application_context
+            
+        Returns:
+            Dictionary with order_id and approval_url
+        """
+        try:
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/v2/checkout/orders",
+                headers=headers,
+                json=order_data
+            )
+            
+            if response.status_code not in [200, 201]:
+                raise PaymentException(f"PayPal create order error: {response.text}")
+            
+            result = response.json()
+            
+            # Get approval URL
+            approval_url = None
+            for link in result.get("links", []):
+                if link.get("rel") == "approve":
+                    approval_url = link.get("href")
+                    break
+            
+            return {
+                "order_id": result.get("id"),
+                "approval_url": approval_url,
+                "status": result.get("status")
+            }
+            
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
+        except Exception as e:
+            raise PaymentException(f"PayPal order creation failed: {str(e)}")
+    
+    def capture_order(self, order_id: str) -> Dict[str, Any]:
+        """
+        Capture (complete) a PayPal order after user approval
+        
+        Args:
+            order_id: PayPal Order ID
+            
+        Returns:
+            Dictionary with capture_id and status
+        """
+        try:
+            access_token = self.get_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/v2/checkout/orders/{order_id}/capture",
+                headers=headers
+            )
+            
+            if response.status_code not in [200, 201]:
+                raise PaymentException(f"PayPal capture error: {response.text}")
+            
+            result = response.json()
+            
+            # Get capture ID from response
+            capture_id =None
+            if result.get("purchase_units"):
+                captures = result["purchase_units"][0].get("payments", {}).get("captures", [])
+                if captures:
+                    capture_id = captures[0].get("id")
+            
+            return {
+                "capture_id": capture_id,
+                "status": result.get("status"),
+                "order_id": result.get("id")
+            }
+            
+        except requests.exceptions.RequestException as e:
+            raise PaymentException(f"PayPal API request failed: {str(e)}")
+        except Exception as e:
+            raise PaymentException(f"PayPal capture failed: {str(e)}")
 
 
 # Singleton instance

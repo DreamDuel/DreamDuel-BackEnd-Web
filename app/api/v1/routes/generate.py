@@ -25,17 +25,35 @@ async def generate_image(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Generate an AI image (PLACEHOLDER)"""
+    """
+    Generate an AI image
     
-    # Check user credits
+    - First image is FREE
+    - Each additional image requires payment (purchased credits)
+    """
+    
+    # Get user
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    if not user.is_premium and user.free_images_left <= 0:
-        raise InsufficientCreditsException(required=1, available=user.free_images_left)
+    # Check if user can generate image
+    # First image is always free
+    if user.total_images_generated == 0:
+        # This is the first image - FREE!
+        pass
+    else:
+        # User needs to have purchased images
+        images_available = user.paid_images_count - (user.total_images_generated - 1)
+        
+        if images_available <= 0:
+            raise InsufficientCreditsException(
+                required=1, 
+                available=images_available,
+                message="You need to purchase image generations to continue"
+            )
     
-    # Generate image with AI service (currently returns mock data)
+    # Generate image with AI service
     result = await ai_image_service.generate_image(
         prompt=data.prompt,
         style=data.style,
@@ -44,10 +62,9 @@ async def generate_image(
         character_images=data.characterImages
     )
     
-    # Deduct credits
-    if not user.is_premium:
-        user.free_images_left -= 1
-        db.commit()
+    # Increment total images generated
+    user.total_images_generated += 1
+    db.commit()
     
     return GenerateImageResponse(**result)
 
@@ -96,13 +113,23 @@ async def regenerate_image(
 ):
     """Regenerate an AI image (PLACEHOLDER)"""
     
-    # Check user credits
+    # Check user credits (pay-per-image model)
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    if not user.is_premium and user.free_images_left <= 0:
-        raise InsufficientCreditsException(required=1, available=user.free_images_left)
+    # Check if user has images available
+    if user.total_images_generated == 0:
+        # First image - FREE!
+        pass
+    else:
+        # Calculate available images
+        images_available = user.paid_images_count - (user.total_images_generated - 1)
+        if images_available <= 0:
+            raise InsufficientCreditsException(
+                required=1, 
+                available=max(0, images_available)
+            )
     
     # Regenerate image
     result = await ai_image_service.regenerate_image(
@@ -110,10 +137,9 @@ async def regenerate_image(
         new_prompt=data.prompt
     )
     
-    # Deduct credits
-    if not user.is_premium:
-        user.free_images_left -= 1
-        db.commit()
+    # Increment total images generated
+    user.total_images_generated += 1
+    db.commit()
     
     return GenerateImageResponse(**result)
 

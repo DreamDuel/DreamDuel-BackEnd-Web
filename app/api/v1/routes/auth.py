@@ -53,8 +53,8 @@ async def register(data: RegisterRequest, db: Session = Depends(get_db)):
         password_hash=get_password_hash(data.password),
         referral_code=generate_referral_code(),
         referred_by_id=referred_by_user.id if referred_by_user else None,
-        free_images_left=15 if referred_by_user else 10,  # Bonus for referral
-        free_images_reset_at=calculate_reset_date()
+        total_images_generated=0,
+        paid_images_count=0
     )
     
     db.add(new_user)

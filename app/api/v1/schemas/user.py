@@ -47,11 +47,13 @@ class UserProfileSchema(BaseModel):
     email: str
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
-    is_premium: bool
     is_verified: bool
     referral_code: str
-    free_images_left: int
-    free_images_reset_at: Optional[datetime] = None
+    
+    # Pay-per-image model fields
+    total_images_generated: int = 0
+    paid_images_count: int = 0
+    
     created_at: datetime
     
     # Computed fields
@@ -69,7 +71,6 @@ class PublicUserProfileSchema(BaseModel):
     username: str
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
-    is_premium: bool
     is_verified: bool
     created_at: datetime
     
@@ -80,6 +81,21 @@ class PublicUserProfileSchema(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class UserMeSchema(BaseModel):
+    """Simplified user schema for /me endpoint (Frontend compatibility)"""
+    id: UUID
+    username: str
+    email: str
+    avatarUrl: Optional[str] = Field(None, alias="avatar_url")
+    hasUsedFreeGeneration: bool = Field(default=False)
+    totalImagesGenerated: int = Field(default=0, alias="total_images_generated")
+    createdAt: datetime = Field(alias="created_at")
+    
+    class Config:
+        from_attributes = True
+        populate_by_name = True
 
 
 class FollowResponse(BaseModel):

@@ -69,16 +69,57 @@ class PaymentMethodResponse(BaseModel):
 
 class InvoiceSchema(BaseModel):
     """Invoice schema"""
-    id: UUID
-    paypal_sale_id: Optional[str] = None
+    id: str
+    userId: str
+    paypalOrderId: Optional[str] = None
     amount: float
     currency: str = "USD"
+    quantity: int = 1
+    itemType: str = "image_generation"
     status: str
-    invoice_url: Optional[str] = None
-    created_at: datetime
+    createdAt: datetime
     
     class Config:
         from_attributes = True
+
+
+# New schemas for pay-per-image model
+
+class ImagePackage(BaseModel):
+    """Image package schema"""
+    id: str
+    name: str
+    images: int
+    price: float
+    currency: str = "USD"
+    discount: Optional[str] = None
+
+
+class BuyImagesRequest(BaseModel):
+    """Buy images request"""
+    packageId: str = Field(..., min_length=1)
+    returnUrl: Optional[str] = None
+    cancelUrl: Optional[str] = None
+
+
+class BuyImagesResponse(BaseModel):
+    """Buy images response"""
+    orderId: str
+    approvalUrl: str
+    status: str
+
+
+class PaymentConfirmRequest(BaseModel):
+    """Payment confirmation request"""
+    orderId: str = Field(..., min_length=1)
+
+
+class PaymentConfirmResponse(BaseModel):
+    """Payment confirmation response"""
+    success: bool
+    message: str
+    imagesAdded: int
+    totalImagesAvailable: int
 
 
 class PortalResponse(BaseModel):

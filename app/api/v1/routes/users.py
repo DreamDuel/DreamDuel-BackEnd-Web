@@ -11,7 +11,8 @@ from app.infrastructure.database.models import User, Follow
 from app.api.v1.schemas.user import (
     UserProfileSchema, PublicUserProfileSchema, UserUpdate,
     UserAvatarUpdate, FollowResponse, CreditsResponse,
-    UseCreditsResponse, ReferralResponse, ApplyReferralRequest
+    UseCreditsResponse, ReferralResponse, ApplyReferralRequest,
+    UserMeSchema
 )
 from app.core.exceptions import NotFoundException, ForbiddenException, ConflictException
 from app.utils.helpers import calculate_reset_date
@@ -40,6 +41,28 @@ async def get_current_user(
         followers_count=followers_count,
         following_count=following_count,
         stories_count=0
+    )
+
+
+@router.get("/me/simple", response_model=UserMeSchema)
+async def get_current_user_simple(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Get current user - simplified format for frontend compatibility"""
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise NotFoundException("User", user_id)
+    
+    return UserMeSchema(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        avatar_url=user.avatar_url,
+        hasUsedFreeGeneration=user.total_images_generated > 0,
+        total_images_generated=user.total_images_generated,
+        created_at=user.created_at
     )
 
 
@@ -245,23 +268,27 @@ async def get_credits(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Get user's remaining credits"""
+    """Get user's image generation balance (pay-per-image model)
+    
+    First image is FREE, then user needs to purchase image packages
+    """
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Check if credits need to be reset
-    if user.free_images_reset_at and datetime.utcnow() >= user.free_images_reset_at:
-        user.free_images_left = 10  # Reset to default
-        user.free_images_reset_at = calculate_reset_date()
-        db.commit()
-        db.refresh(user)
+    # Calculate available images
+    if user.total_images_generated == 0:
+        # User hasn't generated first free image yet
+        images_available = 1 + user.paid_images_count
+    else:
+        # First image used, calculate remaining paid images
+        images_available = user.paid_images_count - (user.total_images_generated - 1)
     
     return CreditsResponse(
-        freeImagesLeft=user.free_images_left,
-        resetAt=user.free_images_reset_at,
-        isPremium=user.is_premium
+        freeImagesLeft=max(0, images_available),
+        resetAt=None,  # No longer used in pay-per-image model
+        isPremium=False  # Deprecated field
     )
 
 
@@ -270,26 +297,31 @@ async def use_credits(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Use one image credit"""
+    """[DEPRECATED] Credits are now managed automatically by /generate endpoint
+    
+    This endpoint is kept for backward compatibility only.
+    Use /payments/balance to check available images.
+    """
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    if not user.is_premium and user.free_images_left <= 0:
+    # Calculate available images
+    if user.total_images_generated == 0:
+        images_available = 1 + user.paid_images_count
+    else:
+        images_available = user.paid_images_count - (user.total_images_generated - 1)
+    
+    if images_available <= 0:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="No credits remaining. Upgrade to Premium for unlimited generations."
+            detail="No image generations remaining. Please purchase more images at /payments/packages"
         )
-    
-    if not user.is_premium:
-        user.free_images_left -= 1
-        db.commit()
-        db.refresh(user)
     
     return UseCreditsResponse(
         success=True,
-        creditsLeft=user.free_images_left if not user.is_premium else -1  # -1 = unlimited
+        creditsLeft=max(0, images_available)
     )
 
 
@@ -299,7 +331,7 @@ async def apply_referral(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Apply a referral code for bonus credits"""
+    """Apply a referral code for bonus image credits (pay-per-image model)"""
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
@@ -325,18 +357,18 @@ async def apply_referral(
             detail="You cannot use your own referral code"
         )
     
-    # Apply bonus
+    # Apply bonus - add paid images to both user and referrer
     bonus_credits = 5
     user.referred_by_id = referrer.id
-    user.free_images_left += bonus_credits
+    user.paid_images_count += bonus_credits
     
     # Give referrer bonus too
-    referrer.free_images_left += bonus_credits
+    referrer.paid_images_count += bonus_credits
     
     db.commit()
     
     return ReferralResponse(
         success=True,
         bonusCredits=bonus_credits,
-        message=f"Referral code applied! You received {bonus_credits} bonus credits."
+        message=f"Referral code applied! You received {bonus_credits} bonus image credits."
     )
