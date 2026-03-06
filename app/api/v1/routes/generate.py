@@ -1,18 +1,17 @@
-"""AI Generation routes (PLACEHOLDER)"""
+"""AI Generation routes"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
+from datetime import datetime, timedelta
 
 from app.core.dependencies import get_current_user_id
 from app.api.v1.schemas.generate import (
     GenerateImageRequest, GenerateImageResponse,
-    GenerateBatchRequest, GenerateBatchResponse,
-    RegenerateRequest, GenerationStatusResponse,
-    CancelGenerationResponse
+    GenerationStatusResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import User
+from app.infrastructure.database.models import User, Invoice
 from app.core.exceptions import NotFoundException, InsufficientCreditsException
 from sqlalchemy.orm import Session
 
@@ -26,10 +25,13 @@ async def generate_image(
     db: Session = Depends(get_db)
 ):
     """
-    Generate an AI image
+    Generate an AI image - $1 per image
     
-    - First image is FREE
-    - Each additional image requires payment (purchased credits)
+    Logic:
+    - ALL images require payment (no free generation)
+    - Requires COMPLETED payment within last 5 minutes
+    
+    Returns temporary image URL (not saved to profile)
     """
     
     # Get user
@@ -37,23 +39,23 @@ async def generate_image(
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Check if user can generate image
-    # First image is always free
-    if user.total_images_generated == 0:
-        # This is the first image - FREE!
-        pass
-    else:
-        # User needs to have purchased images
-        images_available = user.paid_images_count - (user.total_images_generated - 1)
-        
-        if images_available <= 0:
-            raise InsufficientCreditsException(
-                required=1, 
-                available=images_available,
-                message="You need to purchase image generations to continue"
-            )
+    # ALWAYS require payment - no free images
+    # Look for completed payment in last 5 minutes
+    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
     
-    # Generate image with AI service
+    recent_payment = db.query(Invoice).filter(
+        Invoice.user_id == current_user_id,
+        Invoice.status == "COMPLETED",
+        Invoice.created_at >= five_minutes_ago
+    ).order_by(Invoice.created_at.desc()).first()
+    
+    if not recent_payment:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Payment required. Please purchase an image generation for $1."
+        )
+    
+    # Generate image with AI service (Cloudinary URL - temporary)
     result = await ai_image_service.generate_image(
         prompt=data.prompt,
         style=data.style,
@@ -66,48 +68,8 @@ async def generate_image(
     user.total_images_generated += 1
     db.commit()
     
+    # Return image URL (temporary - not saved to profile)
     return GenerateImageResponse(**result)
-
-
-# Batch generation endpoint commented out - designed for story scenes
-# @router.post("/batch", response_model=GenerateBatchResponse)
-# async def generate_batch(
-#     data: GenerateBatchRequest,
-#     current_user_id: str = Depends(get_current_user_id),
-#     db: Session = Depends(get_db)
-# ):
-#     """Generate multiple AI images in batch (PLACEHOLDER)"""
-#     
-#     # Check user credits
-#     user = db.query(User).filter(User.id == current_user_id).first()
-#     if not user:
-#         raise NotFoundException("User", current_user_id)
-#     
-#     required_credits = len(data.scenes)
-#     
-#     if not user.is_premium and user.free_images_left < required_credits:
-#         raise InsufficientCreditsException(required=required_credits, available=user.free_images_left)
-#     
-#     # Generate images
-#     prompts = [{"text": scene.text, "prompt": scene.prompt} for scene in data.scenes]
-#     result = await ai_image_service.generate_batch(
-#         prompts=prompts,
-#         style=data.style,
-#         character_images=data.characterImages
-#     )
-#     
-#     # Deduct credits
-#     if not user.is_premium:
-#         user.free_images_left -= required_credits
-#         db.commit()
-#     
-#     return GenerateBatchResponse(**result)
-
-
-@router.post("/{generation_id}/regenerate", response_model=GenerateImageResponse)
-async def regenerate_image(
-    generation_id: str,
-    data: RegenerateRequest,
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
@@ -142,43 +104,3 @@ async def regenerate_image(
     db.commit()
     
     return GenerateImageResponse(**result)
-
-
-@router.get("/{generation_id}/status", response_model=GenerationStatusResponse)
-async def get_generation_status(
-    generation_id: str,
-    current_user_id: str = Depends(get_current_user_id)
-):
-    """Get generation status (PLACEHOLDER)"""
-    
-    result = await ai_image_service.get_generation_status(generation_id)
-    return GenerationStatusResponse(**result)
-
-
-@router.post("/{generation_id}/cancel", response_model=CancelGenerationResponse)
-async def cancel_generation(
-    generation_id: str,
-    current_user_id: str = Depends(get_current_user_id)
-):
-    """Cancel an in-progress generation (PLACEHOLDER)"""
-    
-    success = await ai_image_service.cancel_generation(generation_id)
-    return CancelGenerationResponse(success=success)
-
-
-# Story generation endpoint commented out - not in use
-# @router.post("/story", response_model=GenerateStoryResponse)
-# async def generate_story(
-#     data: GenerateStoryRequest,
-#     current_user_id: str = Depends(get_current_user_id)
-# ):
-#     """Generate a story structure with AI (PLACEHOLDER)"""
-#     
-#     result = await ai_story_service.generate_story(
-#         prompt=data.prompt,
-#         tags=data.tags,
-#         intensity=data.intensity,
-#         characters=[c.dict() for c in data.characters]
-#     )
-#     
-#     return GenerateStoryResponse(**result)

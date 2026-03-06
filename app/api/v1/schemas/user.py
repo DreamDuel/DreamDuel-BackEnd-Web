@@ -93,6 +93,19 @@ class UserMeSchema(BaseModel):
     totalImagesGenerated: int = Field(default=0, alias="total_images_generated")
     createdAt: datetime = Field(alias="created_at")
     
+    @classmethod
+    def from_user(cls, user):
+        """Create schema from User model"""
+        return cls(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            avatar_url=user.avatar_url,
+            hasUsedFreeGeneration=True,  # No free images - always True
+            total_images_generated=user.total_images_generated,
+            created_at=user.created_at
+        )
+    
     class Config:
         from_attributes = True
         populate_by_name = True

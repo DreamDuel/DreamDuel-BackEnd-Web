@@ -1,4 +1,4 @@
-"""Payment routes - Pay per image model"""
+"""Payment routes - $1 per image model"""
 
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from app.infrastructure.database.models import User, Invoice
 from app.api.v1.schemas.payment import (
     BuyImagesRequest, BuyImagesResponse, 
     PaymentConfirmRequest, PaymentConfirmResponse,
-    ImagePackage, InvoiceSchema
+    InvoiceSchema
 )
 from app.core.exceptions import NotFoundException, PaymentException
 from app.infrastructure.external_services.paypal_service import paypal_service
@@ -20,29 +20,18 @@ from app.core.config import settings
 router = APIRouter()
 
 
-# Image packages available for purchase
-IMAGE_PACKAGES = [
-    {"id": "1_image", "images": 1, "price": 2.99, "currency": "USD", "name": "1 Image"},
-    {"id": "5_images", "images": 5, "price": 12.99, "currency": "USD", "name": "5 Images Pack", "discount": "13% OFF"},
-    {"id": "10_images", "images": 10, "price": 22.99, "currency": "USD", "name": "10 Images Pack", "discount": "23% OFF"},
-    {"id": "25_images", "images": 25, "price": 49.99, "currency": "USD", "name": "25 Images Pack", "discount": "33% OFF"},
-]
+# Single image price - $1 USD
+IMAGE_PRICE = 1.00
+CURRENCY = "USD"
 
 
-@router.get("/packages", response_model=List[ImagePackage])
-async def get_packages():
-    """Get available image packages"""
-    return [ImagePackage(**pkg) for pkg in IMAGE_PACKAGES]
-
-
-@router.post("/buy-images", response_model=BuyImagesResponse)
-async def buy_images(
-    data: BuyImagesRequest,
+@router.post("/purchase-image", response_model=BuyImagesResponse)
+async def purchase_single_image(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
-    Purchase image generations
+    Purchase a single image generation for $1 USD
     
     Creates a PayPal order and returns approval URL
     """
@@ -51,28 +40,22 @@ async def buy_images(
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Get package details
-    package = next((p for p in IMAGE_PACKAGES if p["id"] == data.packageId), None)
-    
-    if not package:
-        raise NotFoundException("Package", data.packageId)
-    
-    # Create PayPal order
+    # Create PayPal order for $1
     try:
         order_data = {
             "intent": "CAPTURE",
             "purchase_units": [{
-                "description": f"DreamDuel - {package['name']}",
+                "description": "DreamDuel - AI Image Generation",
                 "amount": {
-                    "currency_code": package["currency"],
-                    "value": str(package["price"])
+                    "currency_code": CURRENCY,
+                    "value": str(IMAGE_PRICE)
                 },
-                "custom_id": f"{current_user_id}:{package['id']}"  # To identify user and package
+                "custom_id": f"{current_user_id}:single_image"
             }],
             "application_context": {
                 "brand_name": "DreamDuel",
-                "return_url": data.returnUrl or f"{settings.FRONTEND_URL}/payment/success",
-                "cancel_url": data.cancelUrl or f"{settings.FRONTEND_URL}/payment/cancel"
+                "return_url": f"{settings.FRONTEND_URL}/payment/success",
+                "cancel_url": f"{settings.FRONTEND_URL}/payment/cancel"
             }
         }
         
@@ -84,9 +67,9 @@ async def buy_images(
             user_id=current_user_id,
             paypal_order_id=result["order_id"],
             item_type="image_generation",
-            quantity=package["images"],
-            amount=package["price"],
-            currency=package["currency"],
+            quantity=1,
+            amount=IMAGE_PRICE,
+            currency=CURRENCY,
             status="PENDING"
         )
         db.add(invoice)
@@ -111,7 +94,7 @@ async def confirm_payment(
     """
     Confirm payment after user approves on PayPal
     
-    This captures the payment and adds image credits to user account
+    Marks payment as completed - user can now generate the image
     """
     
     # Find invoice
@@ -124,28 +107,28 @@ async def confirm_payment(
         raise NotFoundException("Invoice", data.orderId)
     
     if invoice.status == "COMPLETED":
-        raise PaymentException("Payment already processed")
+        return PaymentConfirmResponse(
+            success=True,
+            message="Payment already confirmed",
+            imagesAdded=1,
+            totalImagesAvailable=0  # Not tracking balance anymore
+        )
     
     # Capture payment via PayPal
     try:
         capture_result = paypal_service.capture_order(data.orderId)
         
-        # Update invoice
+        # Update invoice status
         invoice.paypal_capture_id = capture_result.get("capture_id")
         invoice.status = "COMPLETED"
-        
-        # Add image credits to user
-        user = db.query(User).filter(User.id == current_user_id).first()
-        if user:
-            user.paid_images_count += invoice.quantity
         
         db.commit()
         
         return PaymentConfirmResponse(
             success=True,
-            message=f"Payment successful! {invoice.quantity} image generation(s) added to your account",
-            imagesAdded=invoice.quantity,
-            totalImagesAvailable=user.paid_images_count - (user.total_images_generated - 1) if user.total_images_generated > 0 else user.paid_images_count + 1  # +1 for first free image
+            message="Payment successful! You can now generate your image.",
+            imagesAdded=1,
+            totalImagesAvailable=0  # Not tracking balance
         )
         
     except Exception as e:
@@ -259,80 +242,30 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/balance")
-async def get_balance(
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Get user's image generation balance"""
-    
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise NotFoundException("User", current_user_id)
-    
-    # Calculate available images
-    if user.total_images_generated == 0:
-        # User hasn't generated first free image yet
-        available_images = 1 + user.paid_images_count
-        first_image_free = True
-    else:
-        # First image used, calculate remaining paid images
-        available_images = user.paid_images_count - (user.total_images_generated - 1)
-        first_image_free = False
-    
-    return {
-        "totalGenerated": user.total_images_generated,
-        "paidImagesCount": user.paid_images_count,
-        "availableImages": max(0, available_images),
-        "firstImageFree": first_image_free
-    }
-
-
-# ==================== FRONTEND COMPATIBILITY ENDPOINTS ====================
-
-
-@router.post("/purchase-image", response_model=BuyImagesResponse)
-async def purchase_single_image(
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Purchase a single image generation (Frontend compatibility endpoint)
-    
-    Automatically uses the 1-image package
-    """
-    request_data = BuyImagesRequest(
-        packageId="1_image",
-        returnUrl=f"{settings.FRONTEND_URL}/payment/success",
-        cancelUrl=f"{settings.FRONTEND_URL}/payment/cancel"
-    )
-    
-    return await buy_images(request_data, current_user_id, db)
-
-
-@router.post("/purchase-package", response_model=BuyImagesResponse)
-async def purchase_package(
-    data: BuyImagesRequest,
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Purchase an image package (Frontend compatibility endpoint)
-    
-    Alias for /buy-images
-    """
-    return await buy_images(data, current_user_id, db)
-
-
 @router.get("/transactions", response_model=List[InvoiceSchema])
 async def get_transactions(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
     limit: int = 20
 ):
-    """
-    Get user's transaction history (Frontend compatibility endpoint)
+    """Get user's payment history / transactions"""
     
-    Alias for /invoices
-    """
-    return await get_invoices(current_user_id, db, limit)
+    invoices = db.query(Invoice).filter(
+        Invoice.user_id == current_user_id
+    ).order_by(Invoice.created_at.desc()).limit(limit).all()
+    
+    return [
+        InvoiceSchema(
+            id=str(inv.id),
+            userId=str(inv.user_id),
+            amount=inv.amount,
+            currency=inv.currency,
+            quantity=inv.quantity,
+            itemType=inv.item_type,
+            status=inv.status,
+            paypalOrderId=inv.paypal_order_id,
+            createdAt=inv.created_at
+        )
+        for inv in invoices
+    ]
+

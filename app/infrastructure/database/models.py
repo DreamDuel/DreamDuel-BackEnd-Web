@@ -48,13 +48,14 @@ class User(Base):
     referral_code = Column(String(20), unique=True, nullable=False, index=True)
     referred_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     
-    # Image generation tracking - Pay per image model
-    total_images_generated = Column(Integer, default=0, nullable=False)  # Total images generated ever
-    paid_images_count = Column(Integer, default=0, nullable=False)  # Images purchased with payment
+    # Image generation tracking - $1 per image (all paid)
+    total_images_generated = Column(Integer, default=0, nullable=False)  # Total images generated
     
-    # Deprecated fields (kept for backward compatibility)
-    free_images_left = Column(Integer, default=10, nullable=False)
-    free_images_reset_at = Column(DateTime(timezone=True), nullable=True)
+    # Deprecated fields (kept for backward compatibility - will be removed in future)
+    paid_images_count = Column(Integer, default=0, nullable=False)  # DEPRECATED
+    is_premium = Column(Boolean, default=False, nullable=False)  # DEPRECATED
+    free_images_left = Column(Integer, default=10, nullable=False)  # DEPRECATED
+    free_images_reset_at = Column(DateTime(timezone=True), nullable=True)  # DEPRECATED
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

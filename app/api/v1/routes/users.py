@@ -55,15 +55,7 @@ async def get_current_user_simple(
     if not user:
         raise NotFoundException("User", user_id)
     
-    return UserMeSchema(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        avatar_url=user.avatar_url,
-        hasUsedFreeGeneration=user.total_images_generated > 0,
-        total_images_generated=user.total_images_generated,
-        created_at=user.created_at
-    )
+    return UserMeSchema.from_user(user)
 
 
 @router.get("/{user_id}", response_model=PublicUserProfileSchema)
@@ -268,27 +260,21 @@ async def get_credits(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Get user's image generation balance (pay-per-image model)
+    """
+    Get user's image generation status
     
-    First image is FREE, then user needs to purchase image packages
+    All images cost $1 each (no free images)
     """
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Calculate available images
-    if user.total_images_generated == 0:
-        # User hasn't generated first free image yet
-        images_available = 1 + user.paid_images_count
-    else:
-        # First image used, calculate remaining paid images
-        images_available = user.paid_images_count - (user.total_images_generated - 1)
-    
+    # No free images in new model
     return CreditsResponse(
-        freeImagesLeft=max(0, images_available),
-        resetAt=None,  # No longer used in pay-per-image model
-        isPremium=False  # Deprecated field
+        freeImagesLeft=0,  # No free images
+        resetAt=None,  # No reset in new model
+        isPremium=False  # No premium tier
     )
 
 
@@ -297,31 +283,20 @@ async def use_credits(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """[DEPRECATED] Credits are now managed automatically by /generate endpoint
+    """
+    [DEPRECATED] No free images available - all cost $1
     
     This endpoint is kept for backward compatibility only.
-    Use /payments/balance to check available images.
     """
     
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise NotFoundException("User", current_user_id)
     
-    # Calculate available images
-    if user.total_images_generated == 0:
-        images_available = 1 + user.paid_images_count
-    else:
-        images_available = user.paid_images_count - (user.total_images_generated - 1)
-    
-    if images_available <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="No image generations remaining. Please purchase more images at /payments/packages"
-        )
-    
-    return UseCreditsResponse(
-        success=True,
-        creditsLeft=max(0, images_available)
+    # No free images available
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail="No free images available. Please purchase for $1 at /payments/purchase-image"
     )
 
 
@@ -331,44 +306,10 @@ async def apply_referral(
     current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Apply a referral code for bonus image credits (pay-per-image model)"""
+    """[DEPRECATED] Referral system disabled in new model"""
     
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise NotFoundException("User", current_user_id)
-    
-    if user.referred_by_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You have already used a referral code"
-        )
-    
-    # Find referrer
-    referrer = db.query(User).filter(
-        User.referral_code == data.code.upper()
-    ).first()
-    
-    if not referrer:
-        raise NotFoundException("Referral code", data.code)
-    
-    if referrer.id == user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot use your own referral code"
-        )
-    
-    # Apply bonus - add paid images to both user and referrer
-    bonus_credits = 5
-    user.referred_by_id = referrer.id
-    user.paid_images_count += bonus_credits
-    
-    # Give referrer bonus too
-    referrer.paid_images_count += bonus_credits
-    
-    db.commit()
-    
-    return ReferralResponse(
-        success=True,
-        bonusCredits=bonus_credits,
-        message=f"Referral code applied! You received {bonus_credits} bonus image credits."
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Referral system is no longer available"
     )
+
