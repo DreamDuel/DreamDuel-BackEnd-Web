@@ -61,15 +61,21 @@ async def google_oauth(
     
     try:
         # Verify Google token
+        print(f"🔍 Verificando token de Google (primeros 50 chars): {data.token[:50]}...")
+        
         response = requests.get(
             f"https://oauth2.googleapis.com/tokeninfo?id_token={data.token}",
             timeout=10
         )
         
+        print(f"🔍 Google API response status: {response.status_code}")
+        
         if response.status_code != 200:
+            print(f"❌ Google token inválido. Response: {response.text}")
             raise AuthenticationException("Invalid Google token")
         
         google_data = response.json()
+        print(f"✅ Token válido. Email: {google_data.get('email')}")
         
         # Verify audience (client ID)
         if google_data.get("aud") != settings.GOOGLE_CLIENT_ID:
