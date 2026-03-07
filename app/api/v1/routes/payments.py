@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
 
-from app.core.dependencies import get_current_user_id  # Keep for legacy endpoints
 from app.infrastructure.database.session import get_db
 from app.infrastructure.database.models import User, Invoice, GeneratedImage
 from app.api.v1.schemas.payment import (
