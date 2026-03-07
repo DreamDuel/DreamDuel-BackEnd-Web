@@ -50,6 +50,9 @@ async def guest_purchase_image(
             }],
             "application_context": {
                 "brand_name": "DreamDuel",
+                "landing_page": "BILLING",              # Muestra formulario de tarjeta directo
+                "payment_method_preference": "IMMEDIATE_PAYMENT_REQUIRED",
+                "user_action": "PAY_NOW",               # Botón dice "Pagar ahora" en vez de "Continuar"
                 "return_url": data.returnUrl or f"{settings.FRONTEND_URL}/payment/success",
                 "cancel_url": data.cancelUrl or f"{settings.FRONTEND_URL}/payment/cancel"
             }
