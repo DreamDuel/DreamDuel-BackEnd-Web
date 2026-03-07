@@ -96,8 +96,8 @@ class ImagePackage(BaseModel):
 
 
 class BuyImagesRequest(BaseModel):
-    """Buy images request"""
-    packageId: str = Field(..., min_length=1)
+    """Buy images request (Guest checkout support)"""
+    sessionId: str = Field(..., min_length=1)  # Required for guest checkout
     returnUrl: Optional[str] = None
     cancelUrl: Optional[str] = None
 
@@ -110,8 +110,9 @@ class BuyImagesResponse(BaseModel):
 
 
 class PaymentConfirmRequest(BaseModel):
-    """Payment confirmation request"""
+    """Payment confirmation request (Guest checkout support)"""
     orderId: str = Field(..., min_length=1)
+    sessionId: str = Field(..., min_length=1)  # Required for guest checkout
 
 
 class PaymentConfirmResponse(BaseModel):
@@ -139,3 +140,18 @@ class ReactivateSubscriptionResponse(BaseModel):
     success: bool = True
     message: str = "Subscription reactivated"
     status: Optional[str] = None
+
+
+class GuestImageStatusRequest(BaseModel):
+    """Get guest image generation status"""
+    sessionId: str = Field(..., min_length=1)
+
+
+class GuestImageStatusResponse(BaseModel):
+    """Guest image status response"""
+    hasPaid: bool
+    imageReady: bool
+    imageUrl: Optional[str] = None
+    orderId: Optional[str] = None
+    status: str  # "pending_payment", "payment_completed", "image_ready", "not_found"
+

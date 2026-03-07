@@ -80,7 +80,8 @@ class GeneratedImage(Base):
     __tablename__ = "generated_images"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)  # Nullable for guest users
+    session_id = Column(String(255), nullable=True, index=True)  # For guest checkout tracking
     prompt = Column(Text, nullable=False)
     negative_prompt = Column(Text, nullable=True)
     image_url = Column(String(500), nullable=False)
@@ -154,7 +155,8 @@ class Invoice(Base):
     __tablename__ = "invoices"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)  # Nullable for guest checkout
+    session_id = Column(String(255), nullable=True, index=True)  # For guest checkout tracking
     
     # PayPal fields
     paypal_order_id = Column(String(100), unique=True, nullable=True)  # PayPal Order ID

@@ -6,12 +6,13 @@ from pydantic import BaseModel, Field
 
 
 class GenerateImageRequest(BaseModel):
-    """Generate image request"""
+    """Generate image request (Guest checkout support)"""
     prompt: str = Field(..., min_length=1, max_length=1000)
     style: Optional[str] = None
     aspectRatio: Optional[str] = "1:1"
     negativePrompt: Optional[str] = None
     characterImages: List[str] = Field(default_factory=list)
+    sessionId: str = Field(..., min_length=1)  # Required for guest checkout tracking
 
 
 class GenerateImageResponse(BaseModel):

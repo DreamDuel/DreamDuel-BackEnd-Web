@@ -1,17 +1,16 @@
-"""AI Generation routes"""
+"""AI Generation routes - Guest checkout support"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
 from datetime import datetime, timedelta
 
-from app.core.dependencies import get_current_user_id
 from app.api.v1.schemas.generate import (
     GenerateImageRequest, GenerateImageResponse,
     GenerationStatusResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
 from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import User, Invoice
+from app.infrastructure.database.models import User, Invoice, GeneratedImage
 from app.core.exceptions import NotFoundException, InsufficientCreditsException
 from sqlalchemy.orm import Session
 
@@ -19,34 +18,28 @@ router = APIRouter()
 
 
 @router.post("", response_model=GenerateImageResponse)
-async def generate_image(
+async def generate_image_guest(
     data: GenerateImageRequest,
-    current_user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
-    Generate an AI image - $1 per image
+    Generate an AI image - $1 per image (GUEST CHECKOUT)
     
     Logic:
-    - ALL images require payment (no free generation)
-    - Requires COMPLETED payment within last 5 minutes
+    - No login required - uses session_id from frontend
+    - Requires COMPLETED payment for this session_id within last 24 hours
+    - Checks that image hasn't been generated yet for this payment
     
-    Returns temporary image URL (not saved to profile)
+    Returns image URL and saves to database
     """
     
-    # Get user
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise NotFoundException("User", current_user_id)
-    
-    # ALWAYS require payment - no free images
-    # Look for completed payment in last 5 minutes
-    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+    # Look for completed payment with this session_id in last 24 hours
+    twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
     
     recent_payment = db.query(Invoice).filter(
-        Invoice.user_id == current_user_id,
+        Invoice.session_id == data.sessionId,
         Invoice.status == "COMPLETED",
-        Invoice.created_at >= five_minutes_ago
+        Invoice.created_at >= twenty_four_hours_ago
     ).order_by(Invoice.created_at.desc()).first()
     
     if not recent_payment:
@@ -55,7 +48,20 @@ async def generate_image(
             detail="Payment required. Please purchase an image generation for $1."
         )
     
-    # Generate image with AI service (Cloudinary URL - temporary)
+    # Check if image was already generated for this session
+    existing_image = db.query(GeneratedImage).filter(
+        GeneratedImage.session_id == data.sessionId
+    ).first()
+    
+    if existing_image:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Image already generated for this payment. Each payment is valid for one image."
+        )
+    
+    print(f"✅ Generating image for guest session: {data.sessionId}")
+    
+    # Generate image with AI service
     result = await ai_image_service.generate_image(
         prompt=data.prompt,
         style=data.style,
@@ -64,51 +70,22 @@ async def generate_image(
         character_images=data.characterImages
     )
     
-    # Increment total images generated
-    user.total_images_generated += 1
-    db.commit()
-    
-    # Return image URL (temporary - not saved to profile)
-    return GenerateImageResponse(**result)
-
-
-@router.post("/{generation_id}/regenerate", response_model=GenerateImageResponse)
-async def regenerate_image(
-    generation_id: UUID,
-    data: GenerateImageRequest,
-    current_user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """Regenerate an AI image (PLACEHOLDER)"""
-    
-    # Get user
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise NotFoundException("User", current_user_id)
-    
-    # Require payment within last 5 minutes (no free images)
-    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
-    
-    recent_payment = db.query(Invoice).filter(
-        Invoice.user_id == current_user_id,
-        Invoice.status == "COMPLETED",
-        Invoice.created_at >= five_minutes_ago
-    ).order_by(Invoice.created_at.desc()).first()
-    
-    if not recent_payment:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Payment required. Please purchase an image generation for $1."
-        )
-    
-    # Regenerate image
-    result = await ai_image_service.regenerate_image(
-        generation_id=generation_id,
-        new_prompt=data.prompt
+    # Save generated image to database with session_id
+    generated_image = GeneratedImage(
+        session_id=data.sessionId,  # Guest session tracking
+        user_id=None,  # No user for guest
+        prompt=data.prompt,
+        negative_prompt=data.negativePrompt,
+        image_url=result["imageUrl"],
+        style=data.style,
+        aspect_ratio=data.aspectRatio,
+        generation_id=result.get("generationId"),
+        is_public=False  # Guest images are private by default
     )
-    
-    # Increment total images generated
-    user.total_images_generated += 1
+    db.add(generated_image)
     db.commit()
     
+    print(f"✅ Image saved for session: {data.sessionId}, url={result['imageUrl']}")
+    
+    # Return image URL
     return GenerateImageResponse(**result)
