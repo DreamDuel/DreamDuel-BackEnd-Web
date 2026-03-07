@@ -60,13 +60,22 @@ async def google_oauth(
         )
     
     try:
-        # Verify Google token
+        # Verify Google token (acepta tanto ID token como access token)
         print(f"🔍 Verificando token de Google (primeros 50 chars): {data.token[:50]}...")
         
+        # Intentar como ID token primero
         response = requests.get(
             f"https://oauth2.googleapis.com/tokeninfo?id_token={data.token}",
             timeout=10
         )
+        
+        # Si falla, intentar como access token
+        if response.status_code != 200:
+            print(f"🔍 No es ID token, intentando como access token...")
+            response = requests.get(
+                f"https://oauth2.googleapis.com/tokeninfo?access_token={data.token}",
+                timeout=10
+            )
         
         print(f"🔍 Google API response status: {response.status_code}")
         
