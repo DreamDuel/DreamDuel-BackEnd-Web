@@ -85,17 +85,21 @@ async def google_oauth(
         
         google_data = response.json()
         print(f"✅ Token válido. Email: {google_data.get('email')}")
+        print(f"🔍 Google data completo: {google_data}")
         
-        # Verify audience (client ID)
-        if google_data.get("aud") != settings.GOOGLE_CLIENT_ID:
+        # Verify audience (client ID) - solo para ID tokens
+        # Access tokens no tienen campo 'aud', así que lo hacemos opcional
+        if "aud" in google_data and google_data.get("aud") != settings.GOOGLE_CLIENT_ID:
             raise AuthenticationException("Invalid token audience")
         
         email = google_data.get("email")
         if not email:
             raise AuthenticationException("Email not provided by Google")
         
-        # Check if email is verified
-        if not google_data.get("email_verified"):
+        # Check if email is verified - solo para ID tokens
+        # Access tokens pueden no tener este campo
+        email_verified = google_data.get("email_verified", google_data.get("verified_email", True))
+        if not email_verified:
             raise AuthenticationException("Google email not verified")
         
         name = google_data.get("name")
