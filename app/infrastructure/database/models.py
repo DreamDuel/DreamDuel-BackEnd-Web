@@ -131,8 +131,8 @@ class Subscription(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True)
     
-    # PayPal fields
-    paypal_subscription_id = Column(String(100), unique=True, nullable=True)
+    # Payment Provider fields
+    provider_subscription_id = Column(String(100), unique=True, nullable=True)
     
     # Common fields
     plan_id = Column(String(100), nullable=False)
@@ -147,7 +147,7 @@ class Subscription(Base):
     user = relationship("User", back_populates="subscription")
     
     def __repr__(self):
-        return f"<Subscription {self.paypal_subscription_id} for User {self.user_id}>"
+        return f"<Subscription {self.provider_subscription_id} for User {self.user_id}>"
 
 
 class Invoice(Base):
@@ -158,10 +158,9 @@ class Invoice(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)  # Nullable for guest checkout
     session_id = Column(String(255), nullable=True, index=True)  # For guest checkout tracking
     
-    # PayPal fields
-    paypal_order_id = Column(String(100), unique=True, nullable=True)  # PayPal Order ID
-    paypal_capture_id = Column(String(100), unique=True, nullable=True)  # PayPal Capture ID
-    paypal_sale_id = Column(String(100), unique=True, nullable=True)  # Deprecated - kept for compatibility
+    # Payment Provider fields
+    provider_order_id = Column(String(100), unique=True, nullable=True)
+    provider_payment_id = Column(String(100), unique=True, nullable=True)
     
     # Payment details
     item_type = Column(String(50), default="image_generation", nullable=False)  # Type of purchase
@@ -176,7 +175,7 @@ class Invoice(Base):
     user = relationship("User", back_populates="invoices")
     
     def __repr__(self):
-        return f"<Invoice {self.paypal_order_id} - {self.quantity} image(s)>"
+        return f"<Invoice {self.provider_order_id} - {self.quantity} image(s)>"
 
 
 class AnalyticsEvent(Base):

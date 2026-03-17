@@ -15,7 +15,6 @@ from app.infrastructure.database.session import init_db, get_db
 from app.infrastructure.cache.redis_client import redis_client
 from app.api.router import api_router
 from app.api.v1.routes import generate as generate_router
-from app.api.v1.routes import payments as payments_router
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -167,9 +166,8 @@ async def metrics():
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 # Also include routes WITHOUT prefix for frontend compatibility
-# Frontend calls /generate and /payments directly
+# Frontend calls /generate directly
 app.include_router(generate_router.router, prefix="/generate", tags=["AI Image Generation (root)"])
-app.include_router(payments_router.router, prefix="/payments", tags=["Payments (root)"])
 
 
 # Root endpoint

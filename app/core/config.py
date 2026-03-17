@@ -27,14 +27,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
-    # PayPal Payment Integration (Recommended for Peru)
-    PAYPAL_MODE: str = "sandbox"  # sandbox or live
-    PAYPAL_CLIENT_ID: str = "dummy-client-id"
-    PAYPAL_CLIENT_SECRET: str = "dummy-client-secret"
-    PAYPAL_WEBHOOK_ID: Optional[str] = None
-    PAYPAL_MONTHLY_PLAN_ID: Optional[str] = None
-    PAYPAL_YEARLY_PLAN_ID: Optional[str] = None
-    
     # Cloudinary
     CLOUDINARY_CLOUD_NAME: str = "dummy-cloud-name"
     CLOUDINARY_API_KEY: str = "dummy-api-key"
