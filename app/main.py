@@ -10,11 +10,10 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from app.core.config import settings
 from app.core.exceptions import DreamDuelException
-from app.core.middleware import RateLimitMiddleware
-from app.infrastructure.database.session import init_db, get_db
-from app.infrastructure.cache.redis_client import redis_client
 from app.api.router import api_router
 from app.api.v1.routes import generate as generate_router
+from app.api.v1.routes import payments as payments_router
+from app.api.v1.routes import upload as upload_router
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -34,20 +33,12 @@ async def lifespan(app: FastAPI):
             traces_sample_rate=1.0 if settings.DEBUG else 0.1,
         )
     
-    # Initialize Redis
-    redis_client.connect()
-    print("✅ Redis connected")
-    
-    # Initialize database (only in development)
-    if settings.DEBUG:
-        init_db()
-        print("✅ Database initialized")
+    # Database initialized conditionally - bypassed for stateless setup
     
     yield
     
     # Shutdown
     print("👋 Shutting down DreamDuel API...")
-    redis_client.disconnect()
 
 
 # Create FastAPI app
@@ -76,10 +67,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Rate limiting middleware
-app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE)
-
 
 # Custom exception handlers
 @app.exception_handler(DreamDuelException)
@@ -124,27 +111,12 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Health check endpoint  
 @app.get("/health", tags=["Health"])
-async def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint - verifies all connections"""
-    db_status = "ok"
-    redis_status = "ok"
+async def health_check():
+    """Health check endpoint - verifies stateles app connections"""
+    redis_status = "skipped"
+    db_status = "skipped"
     
-    # Check Database
-    try:
-        db.execute(text("SELECT 1"))
-    except Exception as e:
-        db_status = "error"
-        print(f"Database health check failed: {e}")
-    
-    # Check Redis
-    try:
-        if not redis_client.client or not redis_client.client.ping():
-            redis_status = "error"
-    except Exception as e:
-        redis_status = "error"
-        print(f"Redis health check failed: {e}")
-    
-    overall_status = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    overall_status = "ok"
     
     return {
         "status": overall_status,
@@ -168,6 +140,9 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # Also include routes WITHOUT prefix for frontend compatibility
 # Frontend calls /generate directly
 app.include_router(generate_router.router, prefix="/generate", tags=["AI Image Generation (root)"])
+app.include_router(payments_router.router, prefix="/payments", tags=["Payments (root)"])
+app.include_router(upload_router.router, prefix="/api/upload/image", tags=["Upload (Stateless)"])
+app.include_router(upload_router.router, prefix="/upload/image", tags=["Upload (Stateless Direct)"])
 
 
 # Root endpoint

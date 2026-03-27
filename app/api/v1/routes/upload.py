@@ -1,31 +1,54 @@
 """Upload routes"""
 
+import os
+import shutil
+import uuid
+from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from typing import Literal
 
 from app.core.dependencies import get_current_user_id
-from app.api.v1.schemas.upload import UploadResponse
-from app.infrastructure.external_services.storage_service import cloudinary_service
 from app.core.config import settings
+
+# Base directory for storing uploads locally
+UPLOAD_DIR = Path("app/uploads")
 
 router = APIRouter()
 
 
-@router.post("", response_model=UploadResponse)
+@router.post("")
 async def upload_file(
     file: UploadFile = File(...),
-    folder: Literal["avatars", "images"] = Form("images"),
-    current_user_id: str = Depends(get_current_user_id)
+    folder: Literal["avatars", "images"] = Form("images")
 ):
-    """Upload an image file to Cloudinary"""
+    """Upload an image file locally to the server"""
     
-    # Validate file
-    cloudinary_service.validate_upload_file(file)
+    # Ensure the directory exists
+    target_dir = UPLOAD_DIR / folder
+    target_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check file size (FastAPI handles this with max size limits)
-    max_size_mb = settings.MAX_UPLOAD_SIZE_MB
+    # Generate a unique filename while preserving extension
+    extension = os.path.splitext(file.filename)[1] if file.filename else ".png"
+    unique_filename = f"{uuid.uuid4()}{extension}"
+    file_path = target_dir / unique_filename
     
-    # Upload to Cloudinary
-    result = await cloudinary_service.upload_image(file, folder=folder)
+    # Check file size (FastAPI handles this with max size limits, but good practice)
     
-    return UploadResponse(**result)
+    # Save file locally
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file globally: {str(e)}")
+    finally:
+        file.file.close()
+        
+    # Return the relative URL so the frontend and backend can find it
+    relative_url = f"/app/uploads/{folder}/{unique_filename}"
+    
+    return {
+        "url": relative_url,
+        "filename": unique_filename,
+        "format": extension.strip('.'),
+        "provider": "local"
+    }

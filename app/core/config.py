@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     CUSTOM_IMAGE_API_URL: Optional[str] = None
     CUSTOM_STORY_API_URL: Optional[str] = None
     CUSTOM_AI_API_KEY: Optional[str] = None
+    # ComfyUI Configuration
+    COMFYUI_API_URL: str = "http://127.0.0.1:8188"
+    COMFYUI_OUTPUT_PATH: Optional[str] = None
     
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

@@ -18,9 +18,9 @@ class GenerateImageRequest(BaseModel):
 class GenerateImageResponse(BaseModel):
     """Generate image response"""
     imageUrl: str
-    prompt: str
-    generationId: str
-    creditsUsed: int
+    prompt: Optional[str] = None
+    generationId: Optional[str] = None
+    creditsUsed: int = 0
 
 
 class BatchSceneInput(BaseModel):

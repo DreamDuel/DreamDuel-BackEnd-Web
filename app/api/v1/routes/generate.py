@@ -1,65 +1,36 @@
 """AI Generation routes - Guest checkout support"""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import StreamingResponse
 from uuid import UUID
 from datetime import datetime, timedelta
+import io
 
 from app.api.v1.schemas.generate import (
     GenerateImageRequest, GenerateImageResponse,
     GenerationStatusResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
-from app.infrastructure.database.session import get_db
-from app.infrastructure.database.models import User, Invoice, GeneratedImage
-from app.core.exceptions import NotFoundException, InsufficientCreditsException
-from sqlalchemy.orm import Session
 
 router = APIRouter()
 
 
 @router.post("", response_model=GenerateImageResponse)
 async def generate_image_guest(
-    data: GenerateImageRequest,
-    db: Session = Depends(get_db)
+    data: GenerateImageRequest
 ):
     """
-    Generate an AI image - $1 per image (GUEST CHECKOUT)
+    Generate an AI image (STATELESS)
     
     Logic:
-    - No login required - uses session_id from frontend
-    - Requires COMPLETED payment for this session_id within last 24 hours
-    - Checks that image hasn't been generated yet for this payment
-    
-    Returns image URL and saves to database
+    - No login or database required
+    - Proxies the generation request to ComfyUI
     """
     
-    # Look for completed payment with this session_id in last 24 hours
-    twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
-    
-    recent_payment = db.query(Invoice).filter(
-        Invoice.session_id == data.sessionId,
-        Invoice.status == "COMPLETED",
-        Invoice.created_at >= twenty_four_hours_ago
-    ).order_by(Invoice.created_at.desc()).first()
-    
-    if not recent_payment:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Payment required. Please purchase an image generation for $1."
-        )
-    
-    # Check if image was already generated for this session
-    existing_image = db.query(GeneratedImage).filter(
-        GeneratedImage.session_id == data.sessionId
-    ).first()
-    
-    if existing_image:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Image already generated for this payment. Each payment is valid for one image."
-        )
-    
-    print(f"✅ Generating image for guest session: {data.sessionId}")
+    print(f"✅ Generating statelessly for session: {data.sessionId}")
+    print(f"📥 PAYLOAD RECEIVED FROM FRONTEND:")
+    print(f"   - Prompt: '{data.prompt}'")
+    print(f"   - Images: {data.characterImages}")
     
     # Generate image with AI service
     result = await ai_image_service.generate_image(
@@ -70,22 +41,52 @@ async def generate_image_guest(
         character_images=data.characterImages
     )
     
-    # Save generated image to database with session_id
-    generated_image = GeneratedImage(
-        session_id=data.sessionId,  # Guest session tracking
-        user_id=None,  # No user for guest
-        prompt=data.prompt,
-        negative_prompt=data.negativePrompt,
-        image_url=result["imageUrl"],
-        style=data.style,
-        aspect_ratio=data.aspectRatio,
-        generation_id=result.get("generationId"),
-        is_public=False  # Guest images are private by default
-    )
-    db.add(generated_image)
-    db.commit()
-    
-    print(f"✅ Image saved for session: {data.sessionId}, url={result['imageUrl']}")
+    print(f"✅ Image generated successfully, url={result['imageUrl']}")
     
     # Return image URL
     return GenerateImageResponse(**result)
+
+@router.delete("/{filename}", status_code=status.HTTP_200_OK)
+async def delete_generated_image(filename: str):
+    """
+    Delete a generated image file from ComfyUI to save disk space.
+    Intended to be called by the frontend when the user closes the page or downloads the image.
+    """
+    if filename:
+        from app.infrastructure.external_services.comfyui_service import comfyui_service
+        # Delete the file physically from ComfyUI
+        await comfyui_service.delete_comfyui_image(filename)
+    
+    print(f"✅ Image {filename} marked for deletion")
+    return {"message": "Image deleted successfully", "success": True}
+
+
+@router.get("/download", status_code=status.HTTP_200_OK)
+async def proxy_download_image(url: str = Query(..., description="ComfyUI image URL to proxy")):
+    """
+    Proxy endpoint to download an image from ComfyUI.
+    The frontend cannot fetch ComfyUI images directly due to CORS,
+    so this endpoint fetches the image server-side and streams it back.
+    """
+    import requests as sync_requests
+    import asyncio
+
+    try:
+        def fetch_image():
+            resp = sync_requests.get(url, timeout=30.0)
+            resp.raise_for_status()
+            return resp.content, resp.headers.get("content-type", "image/png")
+
+        image_bytes, content_type = await asyncio.to_thread(fetch_image)
+
+        return StreamingResponse(
+            io.BytesIO(image_bytes),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"attachment; filename=dreamduel-{int(datetime.now().timestamp())}.png",
+                "Cache-Control": "no-cache"
+            }
+        )
+    except Exception as e:
+        print(f"❌ Error proxying image download: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to download image from source: {str(e)}")

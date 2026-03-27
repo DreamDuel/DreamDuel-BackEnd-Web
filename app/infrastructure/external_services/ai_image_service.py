@@ -4,14 +4,11 @@ Supports multiple AI image generation providers:
 1. Replicate (Stable Diffusion, FLUX, etc.)
 2. OpenAI (DALL-E)
 3. Stability AI (Stable Diffusion)
-4. Custom API (tu propio servicio de IA)
+4. ComfyUI (Local/Dedicated Desktop workflow)
 
 Configuration via .env:
-    AI_IMAGE_PROVIDER=replicate  # o openai, stability, custom
-    REPLICATE_API_KEY=your_key
-    OPENAI_API_KEY=your_key
-    STABILITY_API_KEY=your_key
-    CUSTOM_IMAGE_API_URL=http://tu-servicio:5001/generate
+    AI_IMAGE_PROVIDER=comfyui  # o openai, stability, replicate
+    COMFYUI_API_URL=http://tu-servidor-comfyui:8188
 """
 
 from typing import List, Optional, Dict, Any
@@ -19,6 +16,9 @@ import httpx
 
 from app.core.config import settings
 from app.core.exceptions import ExternalServiceException
+
+# Import our new ComfyUI service
+from app.infrastructure.external_services.comfyui_service import comfyui_service
 
 
 class AIImageService:
@@ -58,8 +58,15 @@ class AIImageService:
             return await self._generate_openai(prompt, style, aspect_ratio)
         elif self.provider == "stability":
             return await self._generate_stability(prompt, style, aspect_ratio, negative_prompt)
-        elif self.provider == "custom":
-            return await self._generate_custom(prompt, style, aspect_ratio, negative_prompt, character_images)
+        elif self.provider in ["custom", "comfyui"]:
+            comfy_result = await comfyui_service.generate_image(prompt, negative_prompt, character_images)
+            images = comfy_result.get("images", [])
+            return {
+                "imageUrl": images[0] if images else "",
+                "generationId": comfy_result.get("generation_id"),
+                "status": "success",
+                "provider": "comfyui"
+            }
         else:
             # Fallback to mock data if no provider configured
             return await self._generate_mock(prompt, style, aspect_ratio)
