@@ -12,10 +12,7 @@ from app.core.config import settings
 from app.core.exceptions import DreamDuelException
 from app.api.router import api_router
 from app.api.v1.routes import generate as generate_router
-from app.api.v1.routes import payments as payments_router
 from app.api.v1.routes import upload as upload_router
-from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 
 @asynccontextmanager
@@ -140,7 +137,6 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # Also include routes WITHOUT prefix for frontend compatibility
 # Frontend calls /generate directly
 app.include_router(generate_router.router, prefix="/generate", tags=["AI Image Generation (root)"])
-app.include_router(payments_router.router, prefix="/payments", tags=["Payments (root)"])
 app.include_router(upload_router.router, prefix="/api/upload/image", tags=["Upload (Stateless)"])
 app.include_router(upload_router.router, prefix="/upload/image", tags=["Upload (Stateless Direct)"])
 

@@ -11,6 +11,7 @@ from app.api.v1.schemas.generate import (
     GenerationStatusResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
+from app.infrastructure.external_services.gumroad_service import gumroad_service
 
 router = APIRouter()
 
@@ -31,8 +32,14 @@ async def generate_image_guest(
     print(f"📥 PAYLOAD RECEIVED FROM FRONTEND:")
     print(f"   - Prompt: '{data.prompt}'")
     print(f"   - Images: {data.characterImages}")
+    print(f"   - License Key: {data.licenseKey}")
     
-    # Generate image with AI service
+    # 1. Verify Gumroad License Key
+    print("⏳ Verifying Gumroad License Key...")
+    await gumroad_service.verify_license(data.licenseKey)
+    print("✅ License key verified and use counted.")
+    
+    # 2. Generate image with AI service
     result = await ai_image_service.generate_image(
         prompt=data.prompt,
         style=data.style,

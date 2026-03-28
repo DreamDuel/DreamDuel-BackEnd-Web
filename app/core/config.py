@@ -15,34 +15,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production-use-generate-secrets-py"
     API_V1_PREFIX: str = "/api"
     
-    # Database
-    DATABASE_URL: str = "postgresql://user:pass@localhost/db"
-    
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
-    
-    # JWT
-    JWT_SECRET: str = "change-me-in-production-use-generate-secrets-py"
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    
-    # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str = "dummy-cloud-name"
-    CLOUDINARY_API_KEY: str = "dummy-api-key"
-    CLOUDINARY_API_SECRET: str = "dummy-api-secret"
+    # Gumroad
+    GUMROAD_PRODUCT_PERMALINK: str = "your_permalink"
     
     # Resend
     RESEND_API_KEY: str = "re_dummy_api_key"
     FROM_EMAIL: str = "noreply@dreamduel.com"
-    
-    # OAuth (optional)
-    GOOGLE_CLIENT_ID: Optional[str] = None
-    GOOGLE_CLIENT_SECRET: Optional[str] = None
-    APPLE_CLIENT_ID: Optional[str] = None
-    APPLE_TEAM_ID: Optional[str] = None
-    APPLE_KEY_ID: Optional[str] = None
-    APPLE_PRIVATE_KEY: Optional[str] = None
     
     # Celery
     CELERY_BROKER_URL: Optional[str] = None
@@ -87,6 +65,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 # Create settings instance

@@ -7,7 +7,6 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from typing import Literal
 
-from app.core.dependencies import get_current_user_id
 from app.core.config import settings
 
 # Base directory for storing uploads locally

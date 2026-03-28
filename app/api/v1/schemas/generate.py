@@ -13,6 +13,7 @@ class GenerateImageRequest(BaseModel):
     negativePrompt: Optional[str] = None
     characterImages: List[str] = Field(default_factory=list)
     sessionId: str = Field(..., min_length=1)  # Required for guest checkout tracking
+    licenseKey: str = Field(..., min_length=1, description="Gumroad License Key")
 
 
 class GenerateImageResponse(BaseModel):
