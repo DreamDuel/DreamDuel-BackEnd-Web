@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production-use-generate-secrets-py"
     API_V1_PREFIX: str = "/api"
     
-    # Gumroad
+    # Gumroad (license verify: product_id is required by Gumroad API)
+    GUMROAD_PRODUCT_ID: Optional[str] = None
     GUMROAD_PRODUCT_PERMALINK: str = "your_permalink"
     
     # Resend
@@ -50,8 +51,9 @@ class Settings(BaseSettings):
     CUSTOM_IMAGE_API_URL: Optional[str] = None
     CUSTOM_STORY_API_URL: Optional[str] = None
     CUSTOM_AI_API_KEY: Optional[str] = None
-    # ComfyUI Configuration
-    COMFYUI_API_URL: str = "http://127.0.0.1:8188"
+    # Modal ComfyUI Configuration
+    MODAL_COMFYUI_URL: Optional[str] = None
+    COMFYUI_API_URL: Optional[str] = None
     COMFYUI_OUTPUT_PATH: Optional[str] = None
     
     @field_validator("CORS_ORIGINS", mode="before")

@@ -41,6 +41,8 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/dreamduel_dev
       - REDIS_URL=redis://redis:6379/0
       - PORT=8000
+      # Quoted so the trailing == is not mangled by any shell/YAML edge cases
+      - "GUMROAD_PRODUCT_ID=nidK2nde3ytwGCcYnyiIpw=="
     ports:
       - "8000:8000"
     depends_on:
