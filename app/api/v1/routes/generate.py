@@ -11,6 +11,7 @@ from app.api.v1.schemas.generate import (
     GenerationStatusResponse
 )
 from app.infrastructure.external_services.ai_image_service import ai_image_service
+from app.infrastructure.external_services.comfyui_service import comfyui_service
 from app.infrastructure.external_services.gumroad_service import gumroad_service
 
 router = APIRouter()
@@ -56,15 +57,11 @@ async def generate_image_guest(
 @router.delete("/{filename}", status_code=status.HTTP_200_OK)
 async def delete_generated_image(filename: str):
     """
-    Delete a generated image file from ComfyUI to save disk space.
-    Intended to be called by the frontend when the user closes the page or downloads the image.
+    Legacy route: kept for older clients. Images are base64/data URLs from Modal;
+    there is no server-side file to remove. Always succeeds.
     """
     if filename:
-        from app.infrastructure.external_services.comfyui_service import comfyui_service
-        # Delete the file physically from ComfyUI
         await comfyui_service.delete_comfyui_image(filename)
-    
-    print(f"✅ Image {filename} marked for deletion")
     return {"message": "Image deleted successfully", "success": True}
 
 
