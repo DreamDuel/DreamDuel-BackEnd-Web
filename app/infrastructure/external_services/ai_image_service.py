@@ -8,7 +8,7 @@ Supports multiple AI image generation providers:
 
 Configuration via .env:
     AI_IMAGE_PROVIDER=comfyui  # o openai, stability, replicate
-    COMFYUI_API_URL=http://tu-servidor-comfyui:8188
+    MODAL_COMFYUI_URL=https://<your-modal-endpoint>
 """
 
 from typing import List, Optional, Dict, Any

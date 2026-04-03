@@ -11,40 +11,44 @@ class GumroadService:
         """
         Verify a Gumroad license key and increment its use count.
         """
-        if not settings.GUMROAD_PRODUCT_PERMALINK:
-            print("⚠️ Gumroad product permalink not configured in settings.")
+        product_id = (settings.GUMROAD_PRODUCT_ID or "").strip()
+        if not product_id:
+            print("⚠️ Gumroad product_id not configured in settings.")
             raise HTTPException(status_code=500, detail="Payment gateway not configured")
+
+        form = {
+            "product_id": product_id,
+            "license_key": license_key,
+            "increment_uses_count": "true",
+        }
+        print(
+            f"Gumroad verify POST: product_id_len={len(product_id)}, "
+            f"license_key_len={len(license_key)}, fields={list(form.keys())}"
+        )
 
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
                     self.verify_url,
-                    data={
-                        "product_permalink": settings.GUMROAD_PRODUCT_PERMALINK,
-                        "license_key": license_key,
-                        "increment_uses_count": "true"
-                    },
-                    timeout=10.0
+                    data=form,
+                    timeout=10.0,
                 )
-                
-                # Check for HTTP errors and Gumroad's "success" boolean
-                data = response.json()
-                
-                # Debug logging
-                print(f"Gumroad API Response: {data}")
 
-                if not response.is_success or not data.get("success"):
+                payload = response.json()
+
+                print(f"Gumroad API Response: {payload}")
+
+                if not response.is_success or not payload.get("success"):
                     # Gumroad usually returns success=False for invalid or exhausted keys
                     raise HTTPException(status_code=403, detail="Invalid Gumroad license key or out of uses.")
-                
-                # Extract the purchase object 
-                purchase = data.get("purchase", {})
+
+                purchase = payload.get("purchase", {})
                 
                 # Check for refunded, disputed, or charged_back
                 if purchase.get("refunded") or purchase.get("disputed") or purchase.get("charged_back"):
                     raise HTTPException(status_code=403, detail="This license key has been refunded or disputed.")
 
-                return data
+                return payload
                 
             except httpx.RequestError as e:
                 print(f"❌ Error connecting to Gumroad: {e}")
